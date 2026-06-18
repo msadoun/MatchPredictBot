@@ -17,7 +17,8 @@ def test_correct_winner_only():
 
 
 def test_correct_draw_only():
-    assert calculate_points(1, 1, 0, 0) == 1
+    assert calculate_points(1, 1, 0, 0) == 0
+    assert calculate_points(2, 2, 1, 1) == 0
 
 
 def test_wrong_prediction():

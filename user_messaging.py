@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import InlineKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ChatType
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
@@ -9,6 +9,12 @@ import messages as msg
 def is_group_chat(update: Update) -> bool:
     chat = update.effective_chat
     return bool(chat and chat.type in {ChatType.GROUP, ChatType.SUPERGROUP})
+
+
+def _private_markup(reply_markup) -> ReplyKeyboardRemove | InlineKeyboardMarkup | None:
+    if isinstance(reply_markup, InlineKeyboardMarkup):
+        return reply_markup
+    return ReplyKeyboardRemove()
 
 
 async def _notify_dm_required(update: Update, bot_username: str) -> None:
@@ -31,15 +37,21 @@ async def reply_to_user(
     reply_markup=None,
     *,
     bot_username: str,
-    menu_markup=None,
+    drop_reply_keyboard: bool = False,
 ) -> bool:
     user = update.effective_user
     if not user:
         return False
 
-    markup = menu_markup if menu_markup is not None else reply_markup
-
     if not is_group_chat(update):
+        markup = _private_markup(reply_markup)
+        if drop_reply_keyboard:
+            chat_id = update.effective_chat.id
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=".",
+                reply_markup=ReplyKeyboardRemove(),
+            )
         if update.callback_query and update.callback_query.message:
             await update.callback_query.message.reply_text(text, reply_markup=markup)
         elif update.message:
@@ -77,7 +89,6 @@ async def edit_or_send_user(
     if query.message.chat.type == ChatType.PRIVATE:
         await query.edit_message_text(text, reply_markup=reply_markup)
         return True
-
     try:
         await context.bot.send_message(
             chat_id=user.id,

@@ -1,7 +1,7 @@
 from datetime import datetime
 import re
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 import database as db
@@ -14,20 +14,26 @@ def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_USER_IDS
 
 
-def chat_menu_markup(update: Update) -> ReplyKeyboardMarkup | None:
-    return None if is_group_chat(update) else MAIN_MENU
-
-
 BOT_USERNAME = "FTM3naBot"
 
 
-MAIN_MENU = ReplyKeyboardMarkup(
-    [
-        [msg.MENU_PREDICT, msg.MENU_MATCHES],
-        [msg.MENU_LEADERBOARD, msg.MENU_MY_PREDICTIONS],
-    ],
-    resize_keyboard=True,
-)
+def main_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(msg.BTN_MATCHES, callback_data="menu:matches"),
+                InlineKeyboardButton(msg.BTN_PREDICT, callback_data="menu:predict"),
+            ],
+            [
+                InlineKeyboardButton(msg.BTN_MY_PREDICTIONS, callback_data="menu:mypredictions"),
+                InlineKeyboardButton(msg.BTN_LEADERBOARD, callback_data="menu:leaderboard"),
+            ],
+            [
+                InlineKeyboardButton(msg.BTN_CANCEL, callback_data="menu:cancel"),
+                InlineKeyboardButton(msg.BTN_HELP, callback_data="menu:help"),
+            ],
+        ]
+    )
 
 RANK_MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
 
@@ -37,8 +43,10 @@ def format_leaderboard_text(
     *,
     viewer_entry: db.LeaderboardEntry | None = None,
     total_participants: int = 0,
+    group_chat: bool = False,
 ) -> str:
-    lines = [msg.LEADERBOARD_TITLE]
+    title = msg.LEADERBOARD_TITLE_GROUP if group_chat else msg.LEADERBOARD_TITLE
+    lines = [title]
 
     if not entries:
         lines.append(msg.LEADERBOARD_EMPTY)
@@ -51,13 +59,7 @@ def format_leaderboard_text(
             name += f" (@{entry.username})"
         lines.append(
             msg.LEADERBOARD_ROW.format(
-                medal=medal,
-                name=name,
-                points=entry.total_points,
-                count=entry.predictions_count,
-                exact=entry.exact_hits,
-                goals=entry.goal_hits,
-                winner=entry.winner_hits,
+                medal=medal, name=name, points=entry.total_points
             )
         )
 
@@ -69,13 +71,10 @@ def format_leaderboard_text(
     if viewer_entry:
         lines.append(
             msg.YOUR_RANK.format(
-                rank=viewer_entry.rank,
-                points=viewer_entry.total_points,
-                count=viewer_entry.predictions_count,
+                rank=viewer_entry.rank, points=viewer_entry.total_points
             )
         )
 
-    lines.append(msg.SCORING_RULES)
     return "\n".join(lines)
 
 
@@ -84,13 +83,19 @@ async def send_leaderboard(
     context: ContextTypes.DEFAULT_TYPE,
     viewer_telegram_id: int | None = None,
 ) -> None:
-    entries = db.get_leaderboard(limit=15)
-    total = db.count_leaderboard_participants()
+    group_chat_id = update.effective_chat.id if is_group_chat(update) else None
+    entries = db.get_leaderboard(limit=15, group_chat_id=group_chat_id)
+    total = db.count_leaderboard_participants(group_chat_id=group_chat_id)
     viewer_entry = (
-        db.get_user_leaderboard_entry(viewer_telegram_id) if viewer_telegram_id else None
+        db.get_user_leaderboard_entry(viewer_telegram_id, group_chat_id=group_chat_id)
+        if viewer_telegram_id
+        else None
     )
     text = format_leaderboard_text(
-        entries, viewer_entry=viewer_entry, total_participants=total
+        entries,
+        viewer_entry=viewer_entry,
+        total_participants=total,
+        group_chat=group_chat_id is not None,
     )
 
     await reply_to_user(
@@ -98,8 +103,29 @@ async def send_leaderboard(
         context,
         text,
         bot_username=BOT_USERNAME,
-        menu_markup=chat_menu_markup(update),
     )
+
+
+async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    await query.answer()
+    action = query.data.split(":", 1)[1] if ":" in query.data else ""
+
+    if action == "matches":
+        await matches_command(update, context)
+    elif action == "predict":
+        await predict_command(update, context)
+    elif action == "cancel":
+        await predict_cancel_command(update, context)
+    elif action == "mypredictions":
+        await my_predictions_command(update, context)
+    elif action == "leaderboard":
+        await leaderboard_command(update, context)
+    elif action == "help":
+        await start_command(update, context)
 
 
 def format_match(match: db.Match) -> str:
@@ -118,14 +144,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     display_name = user.full_name or user.username or str(user.id)
-    db.upsert_user(user.id, user.username, display_name)
+    participant = db.upsert_user(user.id, user.username, display_name)
+    _track_group_member(update, participant)
 
     await reply_to_user(
         update,
         context,
         msg.START_TEXT,
+        reply_markup=main_menu_keyboard(),
         bot_username=BOT_USERNAME,
-        menu_markup=chat_menu_markup(update),
+        drop_reply_keyboard=True,
     )
 
 
@@ -139,7 +167,7 @@ async def group_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if member.id != bot_id:
             continue
 
-        await update.message.reply_text(msg.GROUP_WELCOME.format(bot=BOT_USERNAME))
+        await update.message.reply_text(msg.GROUP_WELCOME)
         return
 
 
@@ -148,6 +176,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _ensure_participant(update)
+
     today = datetime.utcnow().strftime("%Y-%m-%d")
     on_date = context.args[0] if context.args else today
 
@@ -181,16 +211,33 @@ async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
 
+def _track_group_member(update: Update, participant: db.User) -> None:
+    if not is_group_chat(update):
+        return
+    chat = update.effective_chat
+    if chat:
+        db.register_group_member(chat.id, participant.id)
+
+
 def _ensure_participant(update: Update) -> db.User | None:
     user = update.effective_user
     if not user:
         return None
     participant = db.get_user_by_telegram_id(user.id)
     if participant:
+        _track_group_member(update, participant)
         return participant
-    return db.upsert_user(
+    participant = db.upsert_user(
         user.id, user.username, user.full_name or user.username or str(user.id)
     )
+    _track_group_member(update, participant)
+    return participant
+
+
+def _group_chat_id(update: Update) -> int:
+    if is_group_chat(update) and update.effective_chat:
+        return update.effective_chat.id
+    return 0
 
 
 def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -201,6 +248,7 @@ def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE) -> None:
         "prediction_home_team",
         "prediction_away_team",
         "prediction_prompt_id",
+        "prediction_group_chat_id",
     ):
         context.user_data.pop(key, None)
 
@@ -286,7 +334,9 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     _ensure_participant(update)
+    group_chat_id = _group_chat_id(update)
     _clear_prediction_state(context)
+    context.user_data["prediction_group_chat_id"] = group_chat_id
 
     if context.args:
         try:
@@ -405,20 +455,27 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         context.user_data["prediction_home_team"] = match.home_team
         context.user_data["prediction_away_team"] = match.away_team
 
-        if pick == "home":
-            winner_label = match.home_team
-        elif pick == "away":
-            winner_label = match.away_team
+        if pick == "draw":
+            pick_text = msg.PICK_DRAW_PROMPT.format(
+                id=match.id,
+                home=match.home_team,
+                vs=msg.VS,
+                away=match.away_team,
+                draw=msg.DRAW,
+            )
         else:
-            winner_label = msg.DRAW
+            if pick == "home":
+                winner_label = match.home_team
+            else:
+                winner_label = match.away_team
 
-        pick_text = msg.PICK_WINNER_PROMPT.format(
-            id=match.id,
-            home=match.home_team,
-            vs=msg.VS,
-            away=match.away_team,
-            winner=winner_label,
-        )
+            pick_text = msg.PICK_WINNER_PROMPT.format(
+                id=match.id,
+                home=match.home_team,
+                vs=msg.VS,
+                away=match.away_team,
+                winner=winner_label,
+            )
         await edit_or_send_user(
             update, context, pick_text, bot_username=BOT_USERNAME
         )
@@ -440,17 +497,27 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     pick = context.user_data["prediction_pick"]
-    result = _scores_from_pick(pick, parsed[0], parsed[1])
-    if isinstance(result, str):
-        await reply_to_user(
-            update, context, f"{result}\n{msg.SEND_CANCEL}", bot_username=BOT_USERNAME
-        )
-        return
+    if parsed[0] == parsed[1]:
+        home_score, away_score = parsed[0], parsed[1]
+    else:
+        result = _scores_from_pick(pick, parsed[0], parsed[1])
+        if isinstance(result, str):
+            await reply_to_user(
+                update, context, f"{result}\n{msg.SEND_CANCEL}", bot_username=BOT_USERNAME
+            )
+            return
+        home_score, away_score = result
 
-    home_score, away_score = result
     match_id = context.user_data["prediction_match_id"]
     home_team = context.user_data["prediction_home_team"]
     away_team = context.user_data["prediction_away_team"]
+
+    if home_score == away_score:
+        outcome = msg.DRAW
+    elif home_score > away_score:
+        outcome = home_team
+    else:
+        outcome = away_team
 
     participant = _ensure_participant(update)
     if not participant:
@@ -464,7 +531,14 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    db.save_prediction(participant.id, match_id, home_score, away_score)
+    group_chat_id = context.user_data.get("prediction_group_chat_id", 0)
+    db.save_prediction(
+        participant.id,
+        match_id,
+        home_score,
+        away_score,
+        group_chat_id=group_chat_id,
+    )
     _clear_prediction_state(context)
     await reply_to_user(
         update,
@@ -473,6 +547,7 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
             home=home_team,
             vs=msg.VS,
             away=away_team,
+            outcome=outcome,
             score=f"{home_score}-{away_score}",
         ),
         bot_username=BOT_USERNAME,
@@ -493,7 +568,12 @@ async def my_predictions_command(
         )
         return
 
-    predictions = db.get_user_predictions(participant.id)
+    group_chat_id = _group_chat_id(update)
+    _track_group_member(update, participant)
+    predictions = db.get_user_predictions(
+        participant.id,
+        group_chat_id=group_chat_id if group_chat_id else None,
+    )
     if not predictions:
         await reply_to_user(
             update, context, msg.NO_PREDICTIONS, bot_username=BOT_USERNAME
@@ -518,30 +598,46 @@ async def my_predictions_command(
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
+    if user:
+        participant = db.get_user_by_telegram_id(user.id)
+        if not participant:
+            participant = db.upsert_user(
+                user.id, user.username, user.full_name or user.username or str(user.id)
+            )
+        _track_group_member(update, participant)
     telegram_id = user.id if user else None
     await send_leaderboard(update, context, viewer_telegram_id=telegram_id)
 
 
-async def menu_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+STALE_KEYBOARD_LABELS = {
+    "⚽ توقع",
+    "📅 المباريات",
+    "🏆 المتصدرين",
+    "📋 توقعاتي",
+    "توقع",
+    "المباريات",
+    "المتصدرين",
+    "توقعاتي",
+}
+
+
+async def stale_keyboard_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if is_group_chat(update):
         return
     if not update.message or not update.message.text:
         return
+    if update.message.text.strip() not in STALE_KEYBOARD_LABELS:
+        return
     if context.user_data.get("prediction_step") == "entering_score":
         return
 
-    action = update.message.text.strip()
-    if action == msg.MENU_PREDICT:
-        await predict_command(update, context)
-    elif action == msg.MENU_MATCHES:
-        await matches_command(update, context)
-    elif action == msg.MENU_LEADERBOARD:
-        await leaderboard_command(update, context)
-    elif action == msg.MENU_MY_PREDICTIONS:
-        await my_predictions_command(update, context)
+    await start_command(update, context)
 
 
-async def add_match_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def add_match_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not user or not is_admin(user.id):
         await reply_to_user(

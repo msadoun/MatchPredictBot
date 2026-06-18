@@ -85,13 +85,15 @@ requirements.txt
 - Validates `BOT_TOKEN` exists
 - Calls `init_db()`
 - Registers all `CommandHandler`, `CallbackQueryHandler`, `MessageHandler` instances
-- `post_init`: sets Arabic Telegram command menu via `set_my_commands`
+- `post_init`: sets Arabic command menu via `set_my_commands`, clears Web App menu button via `set_chat_menu_button(MenuButtonDefault())`
 - `run_polling(allowed_updates=["message", "callback_query"])`
 
 **Handler groups:**
 
-- Group `0`: `menu_message_handler` — reply keyboard taps (private only)
+- Group `0`: `stale_keyboard_handler` — ignores legacy reply-keyboard label taps, redirects to `/start`
 - Group `1`: `predict_score_message` — free-text score entry during prediction
+
+**Callback handlers:** `menu:` (main inline menu), `pred:` (prediction flow)
 
 #### `handlers.py`
 
@@ -99,12 +101,13 @@ Central orchestration. Key functions:
 
 | Function | Role |
 |----------|------|
-| `start_command` | Upsert user, show Arabic help + keyboard |
+| `start_command` | Upsert user, show welcome + inline menu buttons |
+| `menu_callback` | Inline menu taps (`menu:matches`, `menu:predict`, etc.) |
 | `matches_command` | List open matches for a date |
 | `predict_command` | Start prediction (match list or direct ID) |
 | `predict_callback` | Inline button callbacks (`pred:match:`, `pred:pick:`) |
 | `predict_score_message` | Parse `2-1` style input, save prediction |
-| `leaderboard_command` | Format and send standings |
+| `leaderboard_command` | Format and send standings (group-scoped in groups) |
 | `group_welcome` | One message when bot joins a group |
 | Admin commands | `addmatch`, `setresult`, `closematch`, `allmatches`, `loadworldcup` |
 
@@ -112,7 +115,9 @@ Central orchestration. Key functions:
 
 - Context manager `get_db()` — auto commit/rollback
 - CRUD for users, matches, predictions
-- `get_leaderboard()` — only users with ≥1 prediction, ordered by points
+- `register_group_member()` — tracks which users used the bot in each group
+- `get_leaderboard(group_chat_id=...)` — filters by `predictions.chat_id` (0 = private)
+- `save_prediction(..., group_chat_id=0)` — predictions are per group or private
 - `set_match_result()` — updates match + recalculates all prediction points for that match
 - `seed_world_cup_matches()` — idempotent insert from `worldcup2026.py`
 - `migrate_team_names_to_arabic()` — one-time EN→AR rename in existing rows
@@ -121,7 +126,7 @@ Central orchestration. Key functions:
 
 **Critical for groups.** All user-facing replies should go through:
 
-- `reply_to_user()` — private chat: normal reply; group: `send_message(user.id, ...)`
+- `reply_to_user()` — private chat: normal reply (strips legacy reply keyboard); group: `send_message(user.id, ...)`
 - `edit_or_send_user()` — callback edits in private; in group sends DM and deletes/minimizes group message
 
 If the user never `/start`ed in private, Telegram returns `Forbidden` — bot shows `DM_REQUIRED` in the group.
@@ -213,12 +218,21 @@ Message [@userinfobot](https://t.me/userinfobot) or inspect bot logs when you se
 | id | INTEGER PK | |
 | user_id | INTEGER FK → users | |
 | match_id | INTEGER FK → matches | |
+| chat_id | INTEGER | `0` = private; Telegram group chat ID otherwise |
 | home_score | INTEGER | User’s predicted home goals |
 | away_score | INTEGER | User’s predicted away goals |
 | points | INTEGER | NULL until match has result |
 | created_at / updated_at | TEXT | Upsert on re-prediction |
 
-**Unique constraint:** `(user_id, match_id)` — one prediction per user per match (overwritable).
+**`group_members`**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| chat_id | INTEGER | Telegram group chat ID |
+| user_id | INTEGER FK → users | |
+| joined_at | TEXT ISO | Set when user uses bot from that group |
+
+**Unique constraint:** `(user_id, match_id, chat_id)` — one prediction per user per match per group (overwritable).
 
 ### Opening the database
 
@@ -227,7 +241,9 @@ sqlite3 data/bot.db
 .tables
 SELECT * FROM matches WHERE is_open = 1 LIMIT 5;
 SELECT u.display_name, SUM(p.points) FROM users u
-  JOIN predictions p ON p.user_id = u.id GROUP BY u.id ORDER BY 2 DESC;
+  JOIN predictions p ON p.user_id = u.id
+  WHERE p.chat_id = 0
+  GROUP BY u.id ORDER BY 2 DESC;
 ```
 
 ### Backup
@@ -245,9 +261,9 @@ Implemented in `scoring.py` → `calculate_points(predicted_home, predicted_away
 | Points | Condition |
 |--------|-----------|
 | 3 | Exact score |
-| 2 | Correct outcome (winner or draw) **and** predicted winner’s goal count matches actual |
-| 1 | Correct outcome only |
-| 0 | Wrong winner |
+| 2 | Correct winner **and** predicted winner’s goal count matches actual |
+| 1 | Correct winner only |
+| 0 | Wrong winner, or draw without exact score |
 
 **Examples:**
 
@@ -257,9 +273,10 @@ Implemented in `scoring.py` → `calculate_points(predicted_home, predicted_away
 | 4-1 | 4-0 | 2 | Winner + winner goals (4) |
 | 4-1 | 3-0 | 1 | Winner only |
 | 4-1 | 1-4 | 0 | Wrong winner |
-| 1-1 | 0-0 | 1 | Draw correct, not exact |
+| 1-1 | 0-0 | 0 | Draw but not exact |
+| 1-1 | 1-1 | 3 | Exact draw |
 
-**Draw handling:** The 2-point tier does not apply to draws (no “winning team”). Correct draw without exact score = 1 point.
+**Draw handling:** Draws award points **only** for an exact score. The 2-point and 1-point tiers apply to winner predictions only.
 
 **Changing rules:** Edit `scoring.py`, then re-run point recalculation for finished matches (not automated — add a script or call `set_match_result` again with same scores).
 
@@ -279,7 +296,8 @@ Implemented in `scoring.py` → `calculate_points(predicted_home, predicted_away
 
 - User types two numbers separated by `-`
 - For a **winner** pick: higher number assigned to that side (so `1-4` with home winner → 4-1)
-- For **draw**: both numbers must be equal
+- For **draw**: both numbers must be equal; equal scores (e.g. `0-0`) are always saved as a draw
+- `prediction_group_chat_id` in `user_data` links the pick to the group where `/predict` was started
 
 ### Direct match ID
 
@@ -297,6 +315,7 @@ Skips match list, goes straight to winner selection for match #22.
 | `prediction_match_id` | Match ID |
 | `prediction_pick` | `"home"` / `"away"` / `"draw"` |
 | `prediction_home_team` / `prediction_away_team` | Cached names for confirmation message |
+| `prediction_group_chat_id` | Group chat ID (`0` if started in private) |
 
 Cleared by `_clear_prediction_state()` on save or `/cancel`.
 
@@ -317,15 +336,16 @@ Cleared by `_clear_prediction_state()` on save or `/cancel`.
 
 | Aspect | Private | Group |
 |--------|---------|-------|
-| Reply keyboard menu | Shown | Hidden |
+| Main menu | Inline buttons on `/start` | N/A (use commands or DM after `/start`) |
 | Command responses | In chat | **DM to user** |
 | Inline buttons | In chat | DM to user (group message deleted/minimized) |
 | Score text input | In chat | **Private only** (`predict_score_message` returns early in groups) |
+| Leaderboard / predictions | `chat_id = 0` | Scoped to that group’s `chat_id` |
 | Welcome on bot add | N/A | One `GROUP_WELCOME` message in group |
 
 **Prerequisite:** User must `/start` the bot in private once so Telegram allows the bot to DM them.
 
-**BotFather privacy mode:** Default “enabled” is fine — commands and DMs still work. Score entry happens in private after redirect.
+**Legacy reply keyboard:** Old bottom menus (توقع، المباريات، …) are removed. `/start` sends `ReplyKeyboardRemove`. If a Web App icon persists, check BotFather → Bot Settings → Menu Button.
 
 ---
 
@@ -371,7 +391,7 @@ To add English or bilingual support:
 
 **Team names** are data (in DB), not in `messages.py`.
 
-**Reply keyboard labels** must match `menu_message_handler` string comparisons exactly.
+**Inline menu callback data** uses the `menu:` prefix; prediction callbacks use `pred:`.
 
 ---
 
@@ -507,10 +527,11 @@ python -c "from test_scoring import *; test_exact_score(); test_winning_team_goa
 
 ### Manual Telegram test checklist
 
-- [ ] `/start` in private — keyboard appears
+- [ ] `/start` in private — inline menu buttons appear (no bottom keyboard)
 - [ ] `/predict` — full flow saves prediction
 - [ ] `/mypredictions` shows pick
 - [ ] Admin `/setresult` — points appear on `/leaderboard`
+- [ ] Two groups — separate leaderboards after `/predict` from each group
 - [ ] Add bot to test group — `/predict@Bot` — response in DM only
 - [ ] User who never `/start`ed — sees DM_REQUIRED in group
 
@@ -528,9 +549,8 @@ python -c "from test_scoring import *; test_exact_score(); test_winning_team_goa
 3. **Knockout placeholders** (e.g. “فائز م٧٤”) are symbolic until real teams are known.
 4. **`user_data` is in-memory** — lost on bot restart mid-prediction (user restarts flow).
 5. **No multi-tournament support** — everything is one flat match list.
-6. **Admin IDs in env only** — no in-bot admin management.
-7. **Bot token was shared in development chat** — rotate via BotFather if repo or logs could expose it.
-8. **`gh` CLI** was not used for initial push; standard `git push` works.
+6. **Per-group scope** — users must run `/predict` from a group for picks to count there; private picks use `chat_id = 0`.
+7. **Admin IDs in env only** — no in-bot admin management.
 
 ---
 

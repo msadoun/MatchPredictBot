@@ -50,22 +50,32 @@ class LeaderboardEntry:
     winner_hits: int
 
 
-_LEADERBOARD_SQL = """
-    SELECT
-        u.id,
-        u.telegram_id,
-        u.display_name,
-        u.username,
-        COALESCE(SUM(p.points), 0) AS total_points,
-        COUNT(p.id) AS predictions_count,
-        COALESCE(SUM(CASE WHEN p.points = 3 THEN 1 ELSE 0 END), 0) AS exact_hits,
-        COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
-        COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
-    FROM users u
-    INNER JOIN predictions p ON p.user_id = u.id
-    GROUP BY u.id
-    ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
-"""
+def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object]]:
+    params: list[object] = []
+    chat_filter = ""
+    if group_chat_id is not None:
+        chat_filter = "AND p.chat_id = ?"
+        params.append(group_chat_id)
+    else:
+        chat_filter = "AND p.chat_id = 0"
+
+    sql = f"""
+        SELECT
+            u.id,
+            u.telegram_id,
+            u.display_name,
+            u.username,
+            COALESCE(SUM(p.points), 0) AS total_points,
+            COUNT(p.id) AS predictions_count,
+            COALESCE(SUM(CASE WHEN p.points = 3 THEN 1 ELSE 0 END), 0) AS exact_hits,
+            COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
+            COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
+        FROM users u
+        INNER JOIN predictions p ON p.user_id = u.id {chat_filter}
+        GROUP BY u.id
+        ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
+    """
+    return sql, params
 
 
 def _row_to_leaderboard_entry(row: sqlite3.Row, rank: int) -> LeaderboardEntry:
@@ -129,17 +139,56 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 match_id INTEGER NOT NULL,
+                chat_id INTEGER NOT NULL DEFAULT 0,
                 home_score INTEGER NOT NULL,
                 away_score INTEGER NOT NULL,
                 points INTEGER,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                UNIQUE(user_id, match_id),
+                UNIQUE(user_id, match_id, chat_id),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS group_members (
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                joined_at TEXT NOT NULL,
+                PRIMARY KEY (chat_id, user_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
             """
         )
+        _migrate_predictions_for_groups(conn)
+
+
+def _migrate_predictions_for_groups(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()
+    }
+    if "chat_id" in columns:
+        return
+
+    conn.executescript(
+        """
+        CREATE TABLE predictions_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            match_id INTEGER NOT NULL,
+            chat_id INTEGER NOT NULL DEFAULT 0,
+            home_score INTEGER NOT NULL,
+            away_score INTEGER NOT NULL,
+            points INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, match_id, chat_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
+        );
+        DROP TABLE predictions;
+        ALTER TABLE predictions_new RENAME TO predictions;
+        """
+    )
 
 
 def upsert_user(telegram_id: int, username: str | None, display_name: str) -> User:
@@ -350,32 +399,40 @@ def set_match_result(match_id: int, home_score: int, away_score: int) -> Match |
 
 
 def save_prediction(
-    user_id: int, match_id: int, home_score: int, away_score: int
+    user_id: int,
+    match_id: int,
+    home_score: int,
+    away_score: int,
+    *,
+    group_chat_id: int = 0,
 ) -> Prediction:
     now = datetime.utcnow().isoformat()
     with get_db() as conn:
         conn.execute(
             """
-            INSERT INTO predictions (user_id, match_id, home_score, away_score, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, match_id) DO UPDATE SET
+            INSERT INTO predictions (user_id, match_id, chat_id, home_score, away_score, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, match_id, chat_id) DO UPDATE SET
                 home_score = excluded.home_score,
                 away_score = excluded.away_score,
                 updated_at = excluded.updated_at
             """,
-            (user_id, match_id, home_score, away_score, now, now),
+            (user_id, match_id, group_chat_id, home_score, away_score, now, now),
         )
         row = conn.execute(
             """
             SELECT * FROM predictions
-            WHERE user_id = ? AND match_id = ?
+            WHERE user_id = ? AND match_id = ? AND chat_id = ?
             """,
-            (user_id, match_id),
+            (user_id, match_id, group_chat_id),
         ).fetchone()
     return _row_to_prediction(row)
 
 
-def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
+def get_user_predictions(
+    user_id: int, group_chat_id: int | None = None
+) -> list[tuple[Prediction, Match]]:
+    chat_id = 0 if group_chat_id is None else group_chat_id
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -387,10 +444,10 @@ def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
                 m.home_score AS m_home, m.away_score AS m_away, m.is_open, m.created_at AS m_created
             FROM predictions p
             JOIN matches m ON m.id = p.match_id
-            WHERE p.user_id = ?
+            WHERE p.user_id = ? AND p.chat_id = ?
             ORDER BY m.id DESC
             """,
-            (user_id,),
+            (user_id, chat_id),
         ).fetchall()
 
     results: list[tuple[Prediction, Match]] = []
@@ -416,15 +473,34 @@ def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
     return results
 
 
-def get_leaderboard(limit: int = 20) -> list[LeaderboardEntry]:
+def register_group_member(chat_id: int, user_id: int) -> None:
+    now = datetime.utcnow().isoformat()
     with get_db() as conn:
-        rows = conn.execute(f"{_LEADERBOARD_SQL} LIMIT ?", (limit,)).fetchall()
+        conn.execute(
+            """
+            INSERT INTO group_members (chat_id, user_id, joined_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(chat_id, user_id) DO NOTHING
+            """,
+            (chat_id, user_id, now),
+        )
+
+
+def get_leaderboard(
+    limit: int = 20, group_chat_id: int | None = None
+) -> list[LeaderboardEntry]:
+    sql, params = _leaderboard_sql(group_chat_id)
+    with get_db() as conn:
+        rows = conn.execute(f"{sql} LIMIT ?", (*params, limit)).fetchall()
     return [_row_to_leaderboard_entry(row, index) for index, row in enumerate(rows, start=1)]
 
 
-def get_user_leaderboard_entry(telegram_id: int) -> LeaderboardEntry | None:
+def get_user_leaderboard_entry(
+    telegram_id: int, group_chat_id: int | None = None
+) -> LeaderboardEntry | None:
+    sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:
-        rows = conn.execute(_LEADERBOARD_SQL).fetchall()
+        rows = conn.execute(sql, params).fetchall()
 
     for index, row in enumerate(rows, start=1):
         if row["telegram_id"] == telegram_id:
@@ -432,11 +508,18 @@ def get_user_leaderboard_entry(telegram_id: int) -> LeaderboardEntry | None:
     return None
 
 
-def count_leaderboard_participants() -> int:
+def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
     with get_db() as conn:
+        if group_chat_id is None:
+            return int(
+                conn.execute(
+                    "SELECT COUNT(DISTINCT user_id) FROM predictions WHERE chat_id = 0"
+                ).fetchone()[0]
+            )
         return int(
             conn.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM predictions"
+                "SELECT COUNT(DISTINCT user_id) FROM predictions WHERE chat_id = ?",
+                (group_chat_id,),
             ).fetchone()[0]
         )
 

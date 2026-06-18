@@ -8,8 +8,10 @@ Arabic Telegram bot for **FIFA World Cup 2026** match predictions, private leade
 
 - World Cup 2026 fixtures (group stage + knockout rounds) with Arabic team names
 - Step-by-step prediction flow: pick match → choose winner/draw → enter score
-- Tiered scoring (3 / 2 / 1 points)
-- Leaderboard with medals and per-user rank
+- Tiered scoring (3 / 2 / 1 points); **draws score only on exact result**
+- Leaderboard with rank, name, and points
+- **Per-group** predictions and leaderboards (groups don’t mix)
+- Inline menu buttons on `/start` (no bottom reply keyboard)
 - Works in **private chat** and **groups** (group commands reply in private DM)
 - Admin tools to add matches, set results, and reload fixtures
 
@@ -63,7 +65,7 @@ Keep the process running (or deploy to a VPS — see [HANDOVER.md](HANDOVER.md))
 
 | Command | Description |
 |---------|-------------|
-| `/start` | Register and show help |
+| `/start` | Register and show inline menu buttons |
 | `/predict` | Start a prediction |
 | `/matches` | Today’s open matches (`/matches 2026-06-18` for a date) |
 | `/mypredictions` | Your predictions and points |
@@ -86,14 +88,16 @@ Keep the process running (or deploy to a VPS — see [HANDOVER.md](HANDOVER.md))
 |--------|------|
 | **3** | Exact score |
 | **2** | Correct winner + correct winner’s goals (e.g. actual 4-1, predicted 4-0) |
-| **1** | Correct winner or draw, wrong goals |
-| **0** | Wrong winner |
+| **1** | Correct winner, wrong goals |
+| **0** | Wrong winner, or draw predicted but not exact (e.g. predicted 2-2, actual 1-1) |
 
 ## Groups
 
 1. Add **@FTM3naBot** (or your bot username) to the group.
 2. Each user must open the bot in **private chat** and send `/start` once.
 3. In the group, use e.g. `/predict@YourBotName` — all responses arrive in **private DM** only.
+4. Predictions and `/leaderboard` are **scoped to that group** — each group has its own standings.
+5. Use `/predict` from inside a group so your picks count toward that group’s leaderboard.
 
 ## Project layout
 

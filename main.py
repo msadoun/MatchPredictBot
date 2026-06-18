@@ -1,7 +1,7 @@
 import logging
 import sys
 
-from telegram import BotCommand
+from telegram import BotCommand, MenuButtonDefault
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from config import BOT_TOKEN
@@ -12,7 +12,7 @@ from handlers import (
     group_welcome,
     help_command,
     leaderboard_command,
-    menu_message_handler,
+    menu_callback,
     list_all_matches_command,
     load_worldcup_command,
     matches_command,
@@ -22,6 +22,7 @@ from handlers import (
     predict_command,
     predict_score_message,
     set_result_command,
+    stale_keyboard_handler,
     start_command,
 )
 
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 async def post_init(application: Application) -> None:
+    await application.bot.set_chat_menu_button(menu_button=MenuButtonDefault())
     await application.bot.set_my_commands(
         [
             BotCommand("start", "بدء البوت"),
@@ -69,9 +71,10 @@ def main() -> None:
     app.add_handler(CommandHandler("allmatches", list_all_matches_command))
     app.add_handler(CommandHandler("closematch", close_match_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
+    app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu:"))
     app.add_handler(CallbackQueryHandler(predict_callback, pattern=r"^pred:"))
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, menu_message_handler),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, stale_keyboard_handler),
         group=0,
     )
     app.add_handler(

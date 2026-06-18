@@ -21,7 +21,7 @@ def calculate_points(
         return 0
 
     if actual == "draw":
-        return 1
+        return 0
 
     if actual == "home":
         predicted_winner_goals = predicted_home
