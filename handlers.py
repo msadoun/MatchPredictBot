@@ -417,20 +417,6 @@ def _group_chat_id(update: Update) -> int:
     return 0
 
 
-def _prediction_group_chat_id(
-    context: ContextTypes.DEFAULT_TYPE,
-    participant: db.User | None,
-) -> int:
-    from_user_data = context.user_data.get("prediction_group_chat_id")
-    if from_user_data:
-        return int(from_user_data)
-    if participant:
-        active = db.get_user_active_group(participant.id)
-        if active:
-            return active
-    return 0
-
-
 def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE) -> None:
     for key in (
         "prediction_step",
@@ -439,7 +425,6 @@ def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE) -> None:
         "prediction_home_team",
         "prediction_away_team",
         "prediction_prompt_id",
-        "prediction_group_chat_id",
     ):
         context.user_data.pop(key, None)
 
@@ -594,10 +579,9 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     _ensure_participant(update)
-    group_chat_id = _group_chat_id(update)
     _clear_prediction_state(context)
-    context.user_data["prediction_group_chat_id"] = group_chat_id
     participant = db.get_user_by_telegram_id(user.id)
+    group_chat_id = _group_chat_id(update)
     if group_chat_id and participant:
         db.set_user_active_group(participant.id, group_chat_id)
         context.user_data["leaderboard_group_chat_id"] = group_chat_id
@@ -756,14 +740,12 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    group_chat_id = _prediction_group_chat_id(context, participant)
     try:
         db.save_prediction(
             participant.id,
             match_id,
             home_score,
             away_score,
-            group_chat_id=group_chat_id,
         )
     except ValueError:
         _clear_prediction_state(context)
@@ -800,15 +782,8 @@ async def my_predictions_command(
         )
         return
 
-    group_chat_id = _group_chat_id(update)
     _track_group_member(update, participant)
-    if not group_chat_id:
-        active = db.get_user_active_group(participant.id)
-        group_chat_id = active or 0
-    predictions = db.get_user_predictions(
-        participant.id,
-        group_chat_id=group_chat_id if group_chat_id else None,
-    )
+    predictions = db.get_user_predictions(participant.id)
     if not predictions:
         await user_response(update, context, msg.NO_PREDICTIONS)
         return

@@ -52,12 +52,11 @@ class LeaderboardEntry:
 
 def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object]]:
     params: list[object] = []
-    chat_filter = ""
     if group_chat_id is not None:
-        chat_filter = "AND p.chat_id = ?"
+        member_filter = "INNER JOIN group_members gm ON gm.user_id = u.id AND gm.chat_id = ?"
         params.append(group_chat_id)
     else:
-        chat_filter = "AND p.chat_id = 0"
+        member_filter = ""
 
     sql = f"""
         SELECT
@@ -71,7 +70,8 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
             COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
             COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
         FROM users u
-        INNER JOIN predictions p ON p.user_id = u.id {chat_filter}
+        {member_filter}
+        INNER JOIN predictions p ON p.user_id = u.id
         GROUP BY u.id
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
     """
@@ -161,6 +161,33 @@ def init_db() -> None:
         )
         _migrate_predictions_for_groups(conn)
         _migrate_users_active_group(conn)
+        _migrate_predictions_global(conn)
+
+
+def _migrate_predictions_global(conn: sqlite3.Connection) -> None:
+    dupes = conn.execute(
+        """
+        SELECT user_id, match_id
+        FROM predictions
+        GROUP BY user_id, match_id
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+    for dupe in dupes:
+        rows = conn.execute(
+            """
+            SELECT id FROM predictions
+            WHERE user_id = ? AND match_id = ?
+            ORDER BY
+                CASE WHEN points IS NOT NULL THEN 0 ELSE 1 END,
+                updated_at DESC,
+                id DESC
+            """,
+            (dupe["user_id"], dupe["match_id"]),
+        ).fetchall()
+        for row in rows[1:]:
+            conn.execute("DELETE FROM predictions WHERE id = ?", (row["id"],))
+    conn.execute("UPDATE predictions SET chat_id = 0 WHERE chat_id != 0")
 
 
 def _migrate_users_active_group(conn: sqlite3.Connection) -> None:
@@ -537,8 +564,6 @@ def save_prediction(
     match_id: int,
     home_score: int,
     away_score: int,
-    *,
-    group_chat_id: int = 0,
 ) -> Prediction:
     match = get_match(match_id)
     if not match or not match_accepts_predictions(match):
@@ -549,28 +574,25 @@ def save_prediction(
         conn.execute(
             """
             INSERT INTO predictions (user_id, match_id, chat_id, home_score, away_score, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, 0, ?, ?, ?, ?)
             ON CONFLICT(user_id, match_id, chat_id) DO UPDATE SET
                 home_score = excluded.home_score,
                 away_score = excluded.away_score,
                 updated_at = excluded.updated_at
             """,
-            (user_id, match_id, group_chat_id, home_score, away_score, now, now),
+            (user_id, match_id, home_score, away_score, now, now),
         )
         row = conn.execute(
             """
             SELECT * FROM predictions
-            WHERE user_id = ? AND match_id = ? AND chat_id = ?
+            WHERE user_id = ? AND match_id = ? AND chat_id = 0
             """,
-            (user_id, match_id, group_chat_id),
+            (user_id, match_id),
         ).fetchone()
     return _row_to_prediction(row)
 
 
-def get_user_predictions(
-    user_id: int, group_chat_id: int | None = None
-) -> list[tuple[Prediction, Match]]:
-    chat_id = 0 if group_chat_id is None else group_chat_id
+def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -582,10 +604,10 @@ def get_user_predictions(
                 m.home_score AS m_home, m.away_score AS m_away, m.is_open, m.created_at AS m_created
             FROM predictions p
             JOIN matches m ON m.id = p.match_id
-            WHERE p.user_id = ? AND p.chat_id = ?
-            ORDER BY m.id DESC
+            WHERE p.user_id = ?
+            ORDER BY m.kickoff_at ASC, m.id ASC
             """,
-            (user_id, chat_id),
+            (user_id,),
         ).fetchall()
 
     results: list[tuple[Prediction, Match]] = []
@@ -664,12 +686,16 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
         if group_chat_id is None:
             return int(
                 conn.execute(
-                    "SELECT COUNT(DISTINCT user_id) FROM predictions WHERE chat_id = 0"
+                    "SELECT COUNT(DISTINCT user_id) FROM predictions"
                 ).fetchone()[0]
             )
         return int(
             conn.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM predictions WHERE chat_id = ?",
+                """
+                SELECT COUNT(DISTINCT p.user_id)
+                FROM predictions p
+                INNER JOIN group_members gm ON gm.user_id = p.user_id AND gm.chat_id = ?
+                """,
                 (group_chat_id,),
             ).fetchone()[0]
         )
