@@ -593,6 +593,19 @@ def register_group_member(chat_id: int, user_id: int) -> None:
         )
 
 
+def get_user_group_chat_ids(user_id: int) -> list[int]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT chat_id FROM group_members
+            WHERE user_id = ?
+            ORDER BY joined_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+    return [int(row["chat_id"]) for row in rows]
+
+
 def get_leaderboard(
     limit: int = 20, group_chat_id: int | None = None
 ) -> list[LeaderboardEntry]:

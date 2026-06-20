@@ -44,8 +44,14 @@ def format_leaderboard_text(
     viewer_entry: db.LeaderboardEntry | None = None,
     total_participants: int = 0,
     group_chat: bool = False,
+    group_name: str | None = None,
 ) -> str:
-    title = msg.LEADERBOARD_TITLE_GROUP if group_chat else msg.LEADERBOARD_TITLE
+    if group_name:
+        title = msg.LEADERBOARD_TITLE_GROUP_NAMED.format(group=group_name)
+    elif group_chat:
+        title = msg.LEADERBOARD_TITLE_GROUP
+    else:
+        title = msg.LEADERBOARD_TITLE
     lines = [title]
 
     if not entries:
@@ -82,12 +88,27 @@ async def send_leaderboard(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     viewer_telegram_id: int | None = None,
+    *,
+    group_chat_id: int | None = None,
 ) -> None:
-    group_chat_id = update.effective_chat.id if is_group_chat(update) else None
-    entries = db.get_leaderboard(limit=15, group_chat_id=group_chat_id)
-    total = db.count_leaderboard_participants(group_chat_id=group_chat_id)
+    is_group_scope = group_chat_id is not None and group_chat_id != 0
+    group_name: str | None = None
+    if is_group_scope:
+        try:
+            chat = await context.bot.get_chat(group_chat_id)
+            group_name = chat.title
+        except Exception:
+            group_name = None
+
+    entries = db.get_leaderboard(limit=15, group_chat_id=group_chat_id if is_group_scope else None)
+    total = db.count_leaderboard_participants(
+        group_chat_id=group_chat_id if is_group_scope else None
+    )
     viewer_entry = (
-        db.get_user_leaderboard_entry(viewer_telegram_id, group_chat_id=group_chat_id)
+        db.get_user_leaderboard_entry(
+            viewer_telegram_id,
+            group_chat_id=group_chat_id if is_group_scope else None,
+        )
         if viewer_telegram_id
         else None
     )
@@ -95,7 +116,8 @@ async def send_leaderboard(
         entries,
         viewer_entry=viewer_entry,
         total_participants=total,
-        group_chat=group_chat_id is not None,
+        group_chat=is_group_scope,
+        group_name=group_name,
     )
 
     await user_response(
@@ -103,6 +125,107 @@ async def send_leaderboard(
         context,
         text,
         bot_username=BOT_USERNAME,
+    )
+
+
+def _resolve_leaderboard_group(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    participant: db.User | None,
+) -> tuple[int | None, bool]:
+    """Return (group_chat_id or None for private, need_group_picker)."""
+    if is_group_chat(update) and update.effective_chat:
+        chat_id = update.effective_chat.id
+        context.user_data["leaderboard_group_chat_id"] = chat_id
+        return chat_id, False
+
+    if not participant:
+        return None, False
+
+    stored = context.user_data.get("leaderboard_group_chat_id")
+    if stored:
+        return int(stored), False
+
+    pred_group = context.user_data.get("prediction_group_chat_id")
+    if pred_group:
+        context.user_data["leaderboard_group_chat_id"] = pred_group
+        return int(pred_group), False
+
+    groups = db.get_user_group_chat_ids(participant.id)
+    if len(groups) == 1:
+        context.user_data["leaderboard_group_chat_id"] = groups[0]
+        return groups[0], False
+    if len(groups) > 1:
+        return None, True
+    return None, False
+
+
+async def _group_leaderboard_picker_keyboard(
+    context: ContextTypes.DEFAULT_TYPE,
+    group_chat_ids: list[int],
+) -> InlineKeyboardMarkup:
+    rows = []
+    for chat_id in group_chat_ids:
+        try:
+            chat = await context.bot.get_chat(chat_id)
+            label = chat.title or str(chat_id)
+        except Exception:
+            label = str(chat_id)
+        rows.append(
+            [InlineKeyboardButton(label, callback_data=f"lb:group:{chat_id}")]
+        )
+    return InlineKeyboardMarkup(rows)
+
+
+async def _show_group_leaderboard_picker(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    participant: db.User,
+) -> None:
+    groups = db.get_user_group_chat_ids(participant.id)
+    if not groups:
+        await user_response(update, context, msg.LEADERBOARD_PRIVATE_ONLY)
+        return
+    keyboard = await _group_leaderboard_picker_keyboard(context, groups)
+    await user_response(
+        update,
+        context,
+        msg.CHOOSE_GROUP_LEADERBOARD,
+        reply_markup=keyboard,
+    )
+
+
+async def leaderboard_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    await query.answer()
+    parts = query.data.split(":")
+    if len(parts) != 3 or parts[0] != "lb" or parts[1] != "group":
+        return
+
+    try:
+        chat_id = int(parts[2])
+    except ValueError:
+        return
+
+    user = update.effective_user
+    if user:
+        participant = db.get_user_by_telegram_id(user.id)
+        if participant:
+            groups = db.get_user_group_chat_ids(participant.id)
+            if chat_id not in groups:
+                return
+
+    context.user_data["leaderboard_group_chat_id"] = chat_id
+    await send_leaderboard(
+        update,
+        context,
+        viewer_telegram_id=user.id if user else None,
+        group_chat_id=chat_id,
     )
 
 

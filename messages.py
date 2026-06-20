@@ -111,6 +111,12 @@ POINTS_LABEL = "النقاط"
 
 LEADERBOARD_TITLE = "🏆 لوحة متصدرين كأس العالم 2026\n"
 LEADERBOARD_TITLE_GROUP = "🏆 لوحة متصدرين المجموعة\n"
+LEADERBOARD_TITLE_GROUP_NAMED = "🏆 لوحة متصدرين: {group}\n"
+CHOOSE_GROUP_LEADERBOARD = "اختر مجموعة لعرض لوحة المتصدرين:"
+LEADERBOARD_PRIVATE_ONLY = (
+    "لا توجد مجموعة مرتبطة بحسابك.\n"
+    "استخدم البوت من مجموعة تيليغرام أو توقع من داخل المجموعة أولاً."
+)
 LEADERBOARD_EMPTY = "لا توجد توقعات بعد. كن الأول — استخدم /predict!"
 LEADERBOARD_ROW = "{medal} {name} — {points} نقطة"
 LEADERBOARD_TOP_N = "\nيعرض أفضل {shown} من {total} لاعب."
