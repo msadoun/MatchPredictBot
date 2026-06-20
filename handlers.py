@@ -120,10 +120,23 @@ async def send_leaderboard(
         group_name=group_name,
     )
 
+    markup = None
+    if (
+        is_group_scope
+        and not is_group_chat(update)
+        and viewer_telegram_id
+    ):
+        participant = db.get_user_by_telegram_id(viewer_telegram_id)
+        if participant and len(db.get_user_group_chat_ids(participant.id)) > 1:
+            markup = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(msg.BTN_SWITCH_GROUP, callback_data="lb:pick")]]
+            )
+
     await user_response(
         update,
         context,
         text,
+        reply_markup=markup,
         bot_username=BOT_USERNAME,
     )
 
@@ -199,7 +212,21 @@ async def leaderboard_callback(
 
     await query.answer()
     parts = query.data.split(":")
-    if len(parts) != 3 or parts[0] != "lb" or parts[1] != "group":
+    if len(parts) < 2 or parts[0] != "lb":
+        return
+
+    if parts[1] == "pick":
+        user = update.effective_user
+        if not user:
+            return
+        participant = db.get_user_by_telegram_id(user.id)
+        if not participant:
+            return
+        context.user_data.pop("leaderboard_group_chat_id", None)
+        await _show_group_leaderboard_picker(update, context, participant)
+        return
+
+    if len(parts) != 3 or parts[1] != "group":
         return
 
     try:
