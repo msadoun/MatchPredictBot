@@ -305,10 +305,13 @@ def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> b
 def backfill_match_kickoff_times() -> int:
     from worldcup2026 import WORLD_CUP_2026_FIXTURES, kickoff_label
 
-    fixture_labels = {
-        (fixture.home, fixture.away, fixture.date): kickoff_label(fixture)
-        for fixture in WORLD_CUP_2026_FIXTURES
-    }
+    by_date: dict[tuple[str, str, str], str] = {}
+    by_pair: dict[tuple[str, str], str] = {}
+    for fixture in WORLD_CUP_2026_FIXTURES:
+        label = kickoff_label(fixture)
+        by_date[(fixture.home, fixture.away, fixture.date)] = label
+        by_pair[(fixture.home, fixture.away)] = label
+
     updated = 0
     with get_db() as conn:
         rows = conn.execute(
@@ -317,12 +320,10 @@ def backfill_match_kickoff_times() -> int:
         for row in rows:
             kickoff = row["kickoff_at"] or ""
             date_part = kickoff.split(" · ", 1)[0].strip()
-            if len(date_part) > 10 and " " in date_part[10:]:
-                continue
-            date_only = date_part[:10]
-            new_kickoff = fixture_labels.get(
+            date_only = date_part[:10] if date_part else ""
+            new_kickoff = by_date.get(
                 (row["home_team"], row["away_team"], date_only)
-            )
+            ) or by_pair.get((row["home_team"], row["away_team"]))
             if new_kickoff and new_kickoff != kickoff:
                 conn.execute(
                     "UPDATE matches SET kickoff_at = ? WHERE id = ?",

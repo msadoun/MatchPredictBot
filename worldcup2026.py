@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-# UTC kickoff slots assigned per match day (1st–4th match of the day).
-KICKOFF_SLOTS = ("14:00:00", "17:00:00", "20:00:00", "23:00:00")
+from worldcup_kickoffs import kickoff_utc_for_teams
 
 
 @dataclass(frozen=True)
@@ -11,31 +10,28 @@ class WorldCupFixture:
     away: str
     date: str
     group: str
-    time: str = ""
+    kickoff_utc: str = ""
 
 
 def _fixtures_with_times(
     raw: list[tuple[str, str, str, str]],
 ) -> list[WorldCupFixture]:
-    slots_per_date: dict[str, int] = {}
     fixtures: list[WorldCupFixture] = []
     for home, away, date, group in raw:
-        slot = slots_per_date.get(date, 0)
-        time = KICKOFF_SLOTS[min(slot, len(KICKOFF_SLOTS) - 1)]
-        slots_per_date[date] = slot + 1
-        fixtures.append(WorldCupFixture(home, away, date, group, time))
+        kickoff = kickoff_utc_for_teams(home, away)
+        if not kickoff:
+            raise ValueError(f"Missing UTC kickoff for {home} vs {away}")
+        fixtures.append(WorldCupFixture(home, away, date, group, kickoff))
     return fixtures
 
 
 def kickoff_label(fixture: WorldCupFixture) -> str:
-    return f"{fixture.date} {fixture.time} · {fixture.group}"
+    return f"{fixture.kickoff_utc} · {fixture.group}"
 
 
 def kickoff_datetime(kickoff_at: str) -> datetime:
     date_part = kickoff_at.split(" · ", 1)[0].strip()
-    if len(date_part) > 10 and " " in date_part[10:]:
-        return datetime.fromisoformat(date_part)
-    return datetime.fromisoformat(f"{date_part} {KICKOFF_SLOTS[0]}")
+    return datetime.fromisoformat(date_part)
 
 
 def kickoff_deadline(kickoff_at: str) -> datetime:
