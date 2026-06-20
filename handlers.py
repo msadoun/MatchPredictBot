@@ -500,17 +500,22 @@ def _winner_keyboard(match_id: int, home_team: str, away_team: str) -> InlineKey
     )
 
 
-def _match_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
+def _match_picker_keyboard(
+    matches: list[db.Match],
+    user_id: int | None = None,
+) -> InlineKeyboardMarkup:
     open_matches = [m for m in matches if db.match_accepts_predictions(m)]
-    rows = [
-        [
-            InlineKeyboardButton(
-                f"#{match.id} {match.home_team} {msg.VS} {match.away_team}",
-                callback_data=f"pred:match:{match.id}",
-            )
-        ]
-        for match in open_matches
-    ]
+    rows = []
+    for match in open_matches:
+        prefix = "✓ " if user_id and db.user_has_prediction(user_id, match.id) else ""
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{prefix}#{match.id} {match.home_team} {msg.VS} {match.away_team}",
+                    callback_data=f"pred:match:{match.id}",
+                )
+            ]
+        )
     return InlineKeyboardMarkup(rows)
 
 
@@ -534,12 +539,18 @@ async def _show_match_picker(
     edit: bool = False,
 ) -> None:
     matches, prompt = _predictable_matches()
+    participant = None
+    user = update.effective_user
+    if user:
+        participant = db.get_user_by_telegram_id(user.id)
+    user_db_id = participant.id if participant else None
+
     if not matches:
         text = msg.NO_OPEN_MATCHES
         markup = None
     else:
-        text = prompt
-        markup = _match_picker_keyboard(matches)
+        text = f"{prompt}\n\n{msg.PREDICTION_ONCE_NOTE}"
+        markup = _match_picker_keyboard(matches, user_id=user_db_id)
 
     if edit and update.callback_query:
         await edit_or_send_user(
@@ -741,7 +752,7 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     try:
-        db.save_prediction(
+        prediction, was_update = db.save_prediction(
             participant.id,
             match_id,
             home_score,
@@ -754,10 +765,11 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
     _clear_prediction_state(context)
+    template = msg.PREDICTION_UPDATED if was_update else msg.PREDICTION_SAVED
     await reply_to_user(
         update,
         context,
-        msg.PREDICTION_SAVED.format(
+        template.format(
             home=home_team,
             vs=msg.VS,
             away=away_team,

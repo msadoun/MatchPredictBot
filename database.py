@@ -188,6 +188,12 @@ def _migrate_predictions_global(conn: sqlite3.Connection) -> None:
         for row in rows[1:]:
             conn.execute("DELETE FROM predictions WHERE id = ?", (row["id"],))
     conn.execute("UPDATE predictions SET chat_id = 0 WHERE chat_id != 0")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_user_match
+        ON predictions(user_id, match_id)
+        """
+    )
 
 
 def _migrate_users_active_group(conn: sqlite3.Connection) -> None:
@@ -564,32 +570,70 @@ def save_prediction(
     match_id: int,
     home_score: int,
     away_score: int,
-) -> Prediction:
+) -> tuple[Prediction, bool]:
+    """Save one global prediction per user per match. Returns (prediction, was_update)."""
     match = get_match(match_id)
     if not match or not match_accepts_predictions(match):
         raise ValueError("match_not_open")
 
     now = datetime.utcnow().isoformat()
     with get_db() as conn:
-        conn.execute(
+        rows = conn.execute(
             """
-            INSERT INTO predictions (user_id, match_id, chat_id, home_score, away_score, created_at, updated_at)
-            VALUES (?, ?, 0, ?, ?, ?, ?)
-            ON CONFLICT(user_id, match_id, chat_id) DO UPDATE SET
-                home_score = excluded.home_score,
-                away_score = excluded.away_score,
-                updated_at = excluded.updated_at
-            """,
-            (user_id, match_id, home_score, away_score, now, now),
-        )
-        row = conn.execute(
-            """
-            SELECT * FROM predictions
-            WHERE user_id = ? AND match_id = ? AND chat_id = 0
+            SELECT id FROM predictions
+            WHERE user_id = ? AND match_id = ?
+            ORDER BY updated_at DESC, id DESC
             """,
             (user_id, match_id),
+        ).fetchall()
+        was_update = bool(rows)
+        if rows:
+            keep_id = rows[0]["id"]
+            for row in rows[1:]:
+                conn.execute("DELETE FROM predictions WHERE id = ?", (row["id"],))
+            conn.execute(
+                """
+                UPDATE predictions
+                SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?
+                WHERE id = ?
+                """,
+                (home_score, away_score, now, keep_id),
+            )
+            if match.home_score is not None and match.away_score is not None:
+                points = calculate_points(
+                    home_score,
+                    away_score,
+                    match.home_score,
+                    match.away_score,
+                )
+                conn.execute(
+                    "UPDATE predictions SET points = ? WHERE id = ?",
+                    (points, keep_id),
+                )
+        else:
+            cursor = conn.execute(
+                """
+                INSERT INTO predictions (user_id, match_id, chat_id, home_score, away_score, created_at, updated_at)
+                VALUES (?, ?, 0, ?, ?, ?, ?)
+                """,
+                (user_id, match_id, home_score, away_score, now, now),
+            )
+            keep_id = cursor.lastrowid
+
+        row = conn.execute(
+            "SELECT * FROM predictions WHERE id = ?",
+            (keep_id,),
         ).fetchone()
-    return _row_to_prediction(row)
+    return _row_to_prediction(row), was_update
+
+
+def user_has_prediction(user_id: int, match_id: int) -> bool:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM predictions WHERE user_id = ? AND match_id = ? LIMIT 1",
+            (user_id, match_id),
+        ).fetchone()
+    return row is not None
 
 
 def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
