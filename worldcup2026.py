@@ -1,7 +1,10 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, time
 
 from worldcup_kickoffs import kickoff_utc_for_teams
+
+# Kickoffs at or before this UTC time belong to the previous calendar match-day.
+MATCH_DAY_CUTOFF = time(7, 0, 0)
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,25 @@ def kickoff_datetime(kickoff_at: str) -> datetime:
 
 def kickoff_deadline(kickoff_at: str) -> datetime:
     return kickoff_datetime(kickoff_at)
+
+
+def match_day_date(kickoff_at: str) -> str:
+    """Match-day label (YYYY-MM-DD). Early-morning kickoffs (≤07:00 UTC) count as prior day."""
+    dt = kickoff_datetime(kickoff_at)
+    if dt.time() <= MATCH_DAY_CUTOFF:
+        return (dt.date() - timedelta(days=1)).isoformat()
+    return dt.date().isoformat()
+
+
+def current_match_day(*, now: datetime | None = None) -> str:
+    check = now or datetime.utcnow()
+    if check.time() <= MATCH_DAY_CUTOFF:
+        return (check.date() - timedelta(days=1)).isoformat()
+    return check.date().isoformat()
+
+
+def match_on_day(kickoff_at: str, on_date: str) -> bool:
+    return match_day_date(kickoff_at) == on_date
 
 
 def _group_stage() -> list[WorldCupFixture]:

@@ -1,7 +1,7 @@
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator
 
@@ -244,49 +244,50 @@ def list_matches(
     limit: int | None = None,
     on_date: str | None = None,
 ) -> list[Match]:
+    from worldcup2026 import match_on_day
+
     query = "SELECT * FROM matches"
     clauses: list[str] = []
     params: list[object] = []
 
     if on_date:
-        clauses.append("kickoff_at LIKE ?")
-        params.append(f"{on_date}%")
+        next_date = (
+            datetime.fromisoformat(on_date) + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+        clauses.append("(kickoff_at LIKE ? OR kickoff_at LIKE ?)")
+        params.extend([f"{on_date}%", f"{next_date}%"])
 
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
 
     query += " ORDER BY kickoff_at ASC, id ASC"
-    if limit is not None and not open_only:
+    if limit is not None and not open_only and not on_date:
         query += " LIMIT ?"
         params.append(limit)
 
     with get_db() as conn:
         rows = conn.execute(query, params).fetchall()
     matches = [_row_to_match(row) for row in rows]
+    if on_date:
+        matches = [
+            m for m in matches if m.kickoff_at and match_on_day(m.kickoff_at, on_date)
+        ]
     if open_only:
         matches = [m for m in matches if match_accepts_predictions(m)]
         if limit is not None:
             matches = matches[:limit]
+    elif limit is not None and on_date:
+        matches = matches[:limit]
     return matches
 
 
 def count_matches(open_only: bool = False, on_date: str | None = None) -> int:
     if open_only:
         return len(list_predictable_matches(on_date=on_date))
-
-    query = "SELECT COUNT(*) FROM matches"
-    clauses: list[str] = []
-    params: list[object] = []
-
     if on_date:
-        clauses.append("kickoff_at LIKE ?")
-        params.append(f"{on_date}%")
-
-    if clauses:
-        query += " WHERE " + " AND ".join(clauses)
-
+        return len(list_matches(open_only=False, on_date=on_date))
     with get_db() as conn:
-        return int(conn.execute(query, params).fetchone()[0])
+        return int(conn.execute("SELECT COUNT(*) FROM matches").fetchone()[0])
 
 
 def match_has_started(match: Match, *, now: datetime | None = None) -> bool:
@@ -311,9 +312,18 @@ def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> b
 def list_predictable_matches(
     limit: int | None = 25,
     on_date: str | None = None,
+    *,
+    match_day_only: bool = True,
 ) -> list[Match]:
+    from worldcup2026 import current_match_day
+
     sync_match_open_flags()
-    return list_matches(open_only=True, on_date=on_date, limit=limit)
+    day: str | None
+    if match_day_only:
+        day = on_date or current_match_day()
+    else:
+        day = on_date
+    return list_matches(open_only=True, on_date=day, limit=limit)
 
 
 def backfill_match_kickoff_times() -> int:

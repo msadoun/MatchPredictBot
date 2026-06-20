@@ -200,7 +200,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _ensure_participant(update)
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    from worldcup2026 import current_match_day
+
+    today = current_match_day()
     on_date = context.args[0] if context.args else today
 
     try:
@@ -216,8 +218,8 @@ async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     header = msg.OPEN_MATCHES_HEADER.format(date=on_date)
 
     if not matches and not context.args:
-        matches = db.list_predictable_matches(limit=25)
-        total = db.count_matches(open_only=True)
+        matches = db.list_predictable_matches(limit=25, match_day_only=False)
+        total = len(matches)
         if matches:
             header = msg.UPCOMING_OPEN_MATCHES
 
@@ -363,16 +365,15 @@ def _match_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
 
 
 def _predictable_matches(limit: int = 25) -> tuple[list[db.Match], str]:
-    matches = db.list_predictable_matches(limit=limit)
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    has_today = any(
-        m.kickoff_at and m.kickoff_at.startswith(today) for m in matches
-    )
-    prompt = (
-        msg.CHOOSE_MATCH.format(date=today)
-        if has_today
-        else msg.CHOOSE_MATCH_UPCOMING
-    )
+    from worldcup2026 import current_match_day
+
+    match_day = current_match_day()
+    matches = db.list_predictable_matches(on_date=match_day, limit=limit)
+    if not matches:
+        matches = db.list_predictable_matches(limit=limit, match_day_only=False)
+        prompt = msg.CHOOSE_MATCH_UPCOMING
+    else:
+        prompt = msg.CHOOSE_MATCH.format(date=match_day)
     return matches, prompt
 
 
