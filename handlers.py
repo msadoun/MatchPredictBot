@@ -349,6 +349,7 @@ def _winner_keyboard(match_id: int, home_team: str, away_team: str) -> InlineKey
 
 
 def _match_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
+    open_matches = [m for m in matches if db.match_accepts_predictions(m)]
     rows = [
         [
             InlineKeyboardButton(
@@ -356,9 +357,41 @@ def _match_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
                 callback_data=f"pred:match:{match.id}",
             )
         ]
-        for match in matches
+        for match in open_matches
     ]
     return InlineKeyboardMarkup(rows)
+
+
+def _predictable_matches(limit: int = 25) -> tuple[list[db.Match], str]:
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    matches = db.list_matches(open_only=True, on_date=today, limit=limit)
+    prompt = msg.CHOOSE_MATCH.format(date=today)
+    if not matches:
+        matches = db.list_matches(open_only=True, limit=limit)
+        prompt = msg.CHOOSE_MATCH_UPCOMING
+    return matches, prompt
+
+
+async def _show_match_picker(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    edit: bool = False,
+) -> None:
+    matches, prompt = _predictable_matches()
+    if not matches:
+        text = msg.NO_OPEN_MATCHES
+        markup = None
+    else:
+        text = prompt
+        markup = _match_picker_keyboard(matches)
+
+    if edit and update.callback_query:
+        await edit_or_send_user(
+            update, context, text, markup, bot_username=BOT_USERNAME
+        )
+    else:
+        await user_response(update, context, text, reply_markup=markup)
 
 
 async def _prompt_winner_pick(
@@ -425,22 +458,7 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _prompt_winner_pick(update, context, match)
         return
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    matches = db.list_matches(open_only=True, on_date=today, limit=25)
-    prompt = msg.CHOOSE_MATCH.format(date=today)
-    if not matches:
-        matches = db.list_matches(open_only=True, limit=25)
-        prompt = msg.CHOOSE_MATCH_UPCOMING
-    if not matches:
-        await user_response(update, context, msg.NO_OPEN_MATCHES)
-        return
-
-    await user_response(
-        update,
-        context,
-        prompt,
-        reply_markup=_match_picker_keyboard(matches),
-    )
+    await _show_match_picker(update, context)
 
 
 async def predict_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -487,9 +505,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         match = db.get_match(match_id)
         if not match or not db.match_accepts_predictions(match):
-            await edit_or_send_user(
-                update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
-            )
+            await _show_match_picker(update, context, edit=True)
             return
 
         await _prompt_winner_pick(update, context, match, edit=True)

@@ -248,8 +248,6 @@ def list_matches(
     clauses: list[str] = []
     params: list[object] = []
 
-    if open_only:
-        clauses.append("is_open = 1")
     if on_date:
         clauses.append("kickoff_at LIKE ?")
         params.append(f"{on_date}%")
@@ -258,7 +256,7 @@ def list_matches(
         query += " WHERE " + " AND ".join(clauses)
 
     query += " ORDER BY kickoff_at ASC, id ASC"
-    if limit is not None:
+    if limit is not None and not open_only:
         query += " LIMIT ?"
         params.append(limit)
 
@@ -267,16 +265,19 @@ def list_matches(
     matches = [_row_to_match(row) for row in rows]
     if open_only:
         matches = [m for m in matches if match_accepts_predictions(m)]
+        if limit is not None:
+            matches = matches[:limit]
     return matches
 
 
 def count_matches(open_only: bool = False, on_date: str | None = None) -> int:
+    if open_only:
+        return len(list_matches(open_only=True, on_date=on_date))
+
     query = "SELECT COUNT(*) FROM matches"
     clauses: list[str] = []
     params: list[object] = []
 
-    if open_only:
-        clauses.append("is_open = 1")
     if on_date:
         clauses.append("kickoff_at LIKE ?")
         params.append(f"{on_date}%")
@@ -285,10 +286,7 @@ def count_matches(open_only: bool = False, on_date: str | None = None) -> int:
         query += " WHERE " + " AND ".join(clauses)
 
     with get_db() as conn:
-        count = int(conn.execute(query, params).fetchone()[0])
-    if open_only:
-        return len(list_matches(open_only=True, on_date=on_date))
-    return count
+        return int(conn.execute(query, params).fetchone()[0])
 
 
 def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
