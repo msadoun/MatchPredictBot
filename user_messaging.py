@@ -45,7 +45,7 @@ async def reply_to_user(
 
     if not is_group_chat(update):
         markup = _private_markup(reply_markup)
-        if drop_reply_keyboard:
+        if drop_reply_keyboard and update.message:
             chat_id = update.effective_chat.id
             await context.bot.send_message(
                 chat_id=chat_id,

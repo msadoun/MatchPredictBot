@@ -50,6 +50,10 @@ NO_MATCHES_TODAY = (
     "جرّب /matches 2026-06-18 أو /predict <رقم_المباراة>"
 )
 
+UPCOMING_OPEN_MATCHES = "لا توجد مباريات اليوم. المباريات المفتوحة القادمة:\n"
+CHOOSE_MATCH_UPCOMING = "لا توجد مباريات اليوم. اختر مباراة مفتوحة:"
+NO_OPEN_MATCHES = "لا توجد مباريات مفتوحة للتوقع حالياً."
+
 CHOOSE_MATCH = "اختر مباراة للتوقع ({date}):"
 WHO_WINS = "من سيفوز؟"
 MATCH_HEADER = "المباراة #{id}\n{home} {vs} {away}"

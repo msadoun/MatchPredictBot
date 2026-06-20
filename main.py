@@ -5,7 +5,7 @@ from telegram import BotCommand, MenuButtonDefault
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from config import BOT_TOKEN
-from database import init_db
+from database import count_matches, ensure_world_cup_seeded, init_db, sync_match_open_flags
 from handlers import (
     add_match_command,
     close_match_command,
@@ -54,6 +54,13 @@ def main() -> None:
         sys.exit(1)
 
     init_db()
+    seed_result = ensure_world_cup_seeded()
+    if seed_result["added"]:
+        logger.info("Seeded %d World Cup matches on startup", seed_result["added"])
+    synced = sync_match_open_flags()
+    if synced:
+        logger.info("Updated open/closed status on %d matches", synced)
+    logger.info("%d matches open for predictions", count_matches(open_only=True))
 
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 

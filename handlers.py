@@ -98,11 +98,34 @@ async def send_leaderboard(
         group_chat=group_chat_id is not None,
     )
 
-    await reply_to_user(
+    await user_response(
         update,
         context,
         text,
         bot_username=BOT_USERNAME,
+    )
+
+
+async def user_response(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    reply_markup=None,
+    *,
+    bot_username: str = BOT_USERNAME,
+    drop_reply_keyboard: bool = False,
+) -> bool:
+    if update.callback_query and not is_group_chat(update):
+        return await edit_or_send_user(
+            update, context, text, reply_markup, bot_username=bot_username
+        )
+    return await reply_to_user(
+        update,
+        context,
+        text,
+        reply_markup=reply_markup,
+        bot_username=bot_username,
+        drop_reply_keyboard=drop_reply_keyboard,
     )
 
 
@@ -147,12 +170,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     participant = db.upsert_user(user.id, user.username, display_name)
     _track_group_member(update, participant)
 
-    await reply_to_user(
+    await user_response(
         update,
         context,
         msg.START_TEXT,
         reply_markup=main_menu_keyboard(),
-        bot_username=BOT_USERNAME,
         drop_reply_keyboard=True,
     )
 
@@ -191,24 +213,26 @@ async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     matches = db.list_matches(open_only=True, on_date=on_date, limit=25)
     total = db.count_matches(open_only=True, on_date=on_date)
+    header = msg.OPEN_MATCHES_HEADER.format(date=on_date)
+
+    if not matches and not context.args:
+        matches = db.list_matches(open_only=True, limit=25)
+        total = db.count_matches(open_only=True)
+        if matches:
+            header = msg.UPCOMING_OPEN_MATCHES
 
     if not matches:
-        await reply_to_user(
+        await user_response(
             update,
             context,
-            msg.NO_MATCHES_DATE.format(date=on_date),
-            bot_username=BOT_USERNAME,
+            msg.NO_OPEN_MATCHES if not context.args else msg.NO_MATCHES_DATE.format(date=on_date),
         )
         return
 
-    lines = [msg.OPEN_MATCHES_HEADER.format(date=on_date)] + [
-        format_match(match) for match in matches
-    ]
+    lines = [header] + [format_match(match) for match in matches]
     if total > len(matches):
         lines.append(msg.SHOWING_MATCHES.format(shown=len(matches), total=total))
-    await reply_to_user(
-        update, context, "\n\n".join(lines), bot_username=BOT_USERNAME
-    )
+    await user_response(update, context, "\n\n".join(lines))
 
 
 def _track_group_member(update: Update, participant: db.User) -> None:
@@ -403,34 +427,34 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     today = datetime.utcnow().strftime("%Y-%m-%d")
     matches = db.list_matches(open_only=True, on_date=today, limit=25)
+    prompt = msg.CHOOSE_MATCH.format(date=today)
     if not matches:
-        await reply_to_user(
-            update,
-            context,
-            msg.NO_MATCHES_TODAY.format(date=today),
-            bot_username=BOT_USERNAME,
-        )
+        matches = db.list_matches(open_only=True, limit=25)
+        prompt = msg.CHOOSE_MATCH_UPCOMING
+    if not matches:
+        await user_response(update, context, msg.NO_OPEN_MATCHES)
         return
 
-    await reply_to_user(
+    await user_response(
         update,
         context,
-        msg.CHOOSE_MATCH.format(date=today),
+        prompt,
         reply_markup=_match_picker_keyboard(matches),
-        bot_username=BOT_USERNAME,
     )
 
 
 async def predict_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get("prediction_step") != "entering_score":
-        await reply_to_user(
-            update, context, msg.NOTHING_TO_CANCEL, bot_username=BOT_USERNAME
+        _clear_prediction_state(context)
+        await user_response(
+            update,
+            context,
+            msg.START_TEXT,
+            reply_markup=main_menu_keyboard(),
         )
         return
     _clear_prediction_state(context)
-    await reply_to_user(
-        update, context, msg.PREDICTION_CANCELLED, bot_username=BOT_USERNAME
-    )
+    await user_response(update, context, msg.PREDICTION_CANCELLED)
 
 
 async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -586,9 +610,7 @@ async def my_predictions_command(
         group_chat_id=group_chat_id if group_chat_id else None,
     )
     if not predictions:
-        await reply_to_user(
-            update, context, msg.NO_PREDICTIONS, bot_username=BOT_USERNAME
-        )
+        await user_response(update, context, msg.NO_PREDICTIONS)
         return
 
     lines = [msg.YOUR_PREDICTIONS]
@@ -602,9 +624,7 @@ async def my_predictions_command(
             line += f"\n   {msg.POINTS_LABEL}: {prediction.points or 0}"
         lines.append(line)
 
-    await reply_to_user(
-        update, context, "\n\n".join(lines), bot_username=BOT_USERNAME
-    )
+    await user_response(update, context, "\n\n".join(lines))
 
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

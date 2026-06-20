@@ -329,6 +329,37 @@ def seed_world_cup_matches() -> dict[str, int]:
     return {"added": added, "skipped": skipped, "closed": closed}
 
 
+def ensure_world_cup_seeded() -> dict[str, int]:
+    if count_matches() == 0:
+        return seed_world_cup_matches()
+    return {"added": 0, "skipped": count_matches(), "closed": 0}
+
+
+def sync_match_open_flags() -> int:
+    from worldcup2026 import kickoff_deadline
+
+    now = datetime.utcnow()
+    updated = 0
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, kickoff_at, home_score, away_score, is_open FROM matches"
+        ).fetchall()
+        for row in rows:
+            if row["home_score"] is not None and row["away_score"] is not None:
+                should_open = False
+            elif not row["kickoff_at"]:
+                should_open = True
+            else:
+                should_open = kickoff_deadline(row["kickoff_at"]) > now
+            if bool(row["is_open"]) != should_open:
+                conn.execute(
+                    "UPDATE matches SET is_open = ? WHERE id = ?",
+                    (int(should_open), row["id"]),
+                )
+                updated += 1
+    return updated
+
+
 def migrate_team_names_to_arabic() -> dict[str, int]:
     from teams_ar import GROUP_EN_TO_AR, TEAM_EN_TO_AR
 
