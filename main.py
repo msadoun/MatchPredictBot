@@ -18,6 +18,7 @@ from handlers import (
     group_welcome,
     help_command,
     leaderboard_command,
+    leaderboard_callback,
     menu_callback,
     list_all_matches_command,
     load_worldcup_command,
@@ -98,6 +99,7 @@ def main() -> None:
     app.add_handler(CommandHandler("closematch", close_match_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu:"))
+    app.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^lb:"))
     app.add_handler(CallbackQueryHandler(predict_callback, pattern=r"^pred:"))
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, stale_keyboard_handler),

@@ -146,11 +146,6 @@ def _resolve_leaderboard_group(
     if stored:
         return int(stored), False
 
-    pred_group = context.user_data.get("prediction_group_chat_id")
-    if pred_group:
-        context.user_data["leaderboard_group_chat_id"] = pred_group
-        return int(pred_group), False
-
     groups = db.get_user_group_chat_ids(participant.id)
     if len(groups) == 1:
         context.user_data["leaderboard_group_chat_id"] = groups[0]
@@ -555,6 +550,8 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     group_chat_id = _group_chat_id(update)
     _clear_prediction_state(context)
     context.user_data["prediction_group_chat_id"] = group_chat_id
+    if group_chat_id:
+        context.user_data["leaderboard_group_chat_id"] = group_chat_id
 
     if context.args:
         try:
@@ -780,6 +777,7 @@ async def my_predictions_command(
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
+    participant = None
     if user:
         participant = db.get_user_by_telegram_id(user.id)
         if not participant:
@@ -787,8 +785,21 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
                 user.id, user.username, user.full_name or user.username or str(user.id)
             )
         _track_group_member(update, participant)
+
+    group_chat_id, need_picker = _resolve_leaderboard_group(
+        update, context, participant
+    )
+    if need_picker and participant:
+        await _show_group_leaderboard_picker(update, context, participant)
+        return
+
     telegram_id = user.id if user else None
-    await send_leaderboard(update, context, viewer_telegram_id=telegram_id)
+    await send_leaderboard(
+        update,
+        context,
+        viewer_telegram_id=telegram_id,
+        group_chat_id=group_chat_id,
+    )
 
 
 STALE_KEYBOARD_LABELS = {

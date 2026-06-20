@@ -587,7 +587,7 @@ def register_group_member(chat_id: int, user_id: int) -> None:
             """
             INSERT INTO group_members (chat_id, user_id, joined_at)
             VALUES (?, ?, ?)
-            ON CONFLICT(chat_id, user_id) DO NOTHING
+            ON CONFLICT(chat_id, user_id) DO UPDATE SET joined_at = excluded.joined_at
             """,
             (chat_id, user_id, now),
         )
