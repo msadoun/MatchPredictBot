@@ -152,7 +152,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 def format_match(match: db.Match) -> str:
-    status = msg.STATUS_OPEN if match.is_open else msg.STATUS_CLOSED
+    status = msg.STATUS_OPEN if db.match_accepts_predictions(match) else msg.STATUS_CLOSED
     line = f"#{match.id} {match.home_team} {msg.VS} {match.away_team} ({status})"
     if match.kickoff_at:
         line += f"\n   {msg.KICKOFF}: {match.kickoff_at}"
@@ -413,7 +413,7 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 bot_username=BOT_USERNAME,
             )
             return
-        if not match.is_open:
+        if not match or not db.match_accepts_predictions(match):
             await reply_to_user(
                 update,
                 context,
@@ -486,7 +486,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return
 
         match = db.get_match(match_id)
-        if not match or not match.is_open:
+        if not match or not db.match_accepts_predictions(match):
             await edit_or_send_user(
                 update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
             )
@@ -506,7 +506,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return
 
         match = db.get_match(match_id)
-        if not match or not match.is_open:
+        if not match or not db.match_accepts_predictions(match):
             await edit_or_send_user(
                 update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
             )
@@ -559,7 +559,7 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     match = db.get_match(match_id)
-    if not match or not match.is_open:
+    if not match or not db.match_accepts_predictions(match):
         _clear_prediction_state(context)
         await reply_to_user(
             update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
@@ -814,6 +814,8 @@ async def load_worldcup_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     stats = db.seed_world_cup_matches()
+    db.backfill_match_kickoff_times()
+    db.sync_match_open_flags()
     open_count = db.count_matches(open_only=True)
     await reply_to_user(
         update,

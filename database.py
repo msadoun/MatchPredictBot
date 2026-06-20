@@ -264,7 +264,10 @@ def list_matches(
 
     with get_db() as conn:
         rows = conn.execute(query, params).fetchall()
-    return [_row_to_match(row) for row in rows]
+    matches = [_row_to_match(row) for row in rows]
+    if open_only:
+        matches = [m for m in matches if match_accepts_predictions(m)]
+    return matches
 
 
 def count_matches(open_only: bool = False, on_date: str | None = None) -> int:
@@ -282,11 +285,57 @@ def count_matches(open_only: bool = False, on_date: str | None = None) -> int:
         query += " WHERE " + " AND ".join(clauses)
 
     with get_db() as conn:
-        return int(conn.execute(query, params).fetchone()[0])
+        count = int(conn.execute(query, params).fetchone()[0])
+    if open_only:
+        return len(list_matches(open_only=True, on_date=on_date))
+    return count
+
+
+def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
+    if match.home_score is not None and match.away_score is not None:
+        return False
+    if not match.is_open:
+        return False
+    if not match.kickoff_at:
+        return True
+    from worldcup2026 import kickoff_datetime
+
+    check = now or datetime.utcnow()
+    return kickoff_datetime(match.kickoff_at) > check
+
+
+def backfill_match_kickoff_times() -> int:
+    from worldcup2026 import WORLD_CUP_2026_FIXTURES, kickoff_label
+
+    fixture_labels = {
+        (fixture.home, fixture.away, fixture.date): kickoff_label(fixture)
+        for fixture in WORLD_CUP_2026_FIXTURES
+    }
+    updated = 0
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, home_team, away_team, kickoff_at FROM matches"
+        ).fetchall()
+        for row in rows:
+            kickoff = row["kickoff_at"] or ""
+            date_part = kickoff.split(" · ", 1)[0].strip()
+            if len(date_part) > 10 and " " in date_part[10:]:
+                continue
+            date_only = date_part[:10]
+            new_kickoff = fixture_labels.get(
+                (row["home_team"], row["away_team"], date_only)
+            )
+            if new_kickoff and new_kickoff != kickoff:
+                conn.execute(
+                    "UPDATE matches SET kickoff_at = ? WHERE id = ?",
+                    (new_kickoff, row["id"]),
+                )
+                updated += 1
+    return updated
 
 
 def seed_world_cup_matches() -> dict[str, int]:
-    from worldcup2026 import WORLD_CUP_2026_FIXTURES, kickoff_deadline, kickoff_label
+    from worldcup2026 import WORLD_CUP_2026_FIXTURES, kickoff_datetime, kickoff_label
 
     now = datetime.utcnow()
     added = 0
@@ -299,15 +348,15 @@ def seed_world_cup_matches() -> dict[str, int]:
             existing = conn.execute(
                 """
                 SELECT id FROM matches
-                WHERE home_team = ? AND away_team = ? AND kickoff_at = ?
+                WHERE home_team = ? AND away_team = ? AND kickoff_at LIKE ?
                 """,
-                (fixture.home, fixture.away, kickoff_at),
+                (fixture.home, fixture.away, f"{fixture.date}%"),
             ).fetchone()
             if existing:
                 skipped += 1
                 continue
 
-            is_open = kickoff_deadline(kickoff_at) > now
+            is_open = kickoff_datetime(kickoff_at) > now
             if not is_open:
                 closed += 1
 
@@ -336,7 +385,7 @@ def ensure_world_cup_seeded() -> dict[str, int]:
 
 
 def sync_match_open_flags() -> int:
-    from worldcup2026 import kickoff_deadline
+    from worldcup2026 import kickoff_datetime
 
     now = datetime.utcnow()
     updated = 0
@@ -350,7 +399,7 @@ def sync_match_open_flags() -> int:
             elif not row["kickoff_at"]:
                 should_open = True
             else:
-                should_open = kickoff_deadline(row["kickoff_at"]) > now
+                should_open = kickoff_datetime(row["kickoff_at"]) > now
             if bool(row["is_open"]) != should_open:
                 conn.execute(
                     "UPDATE matches SET is_open = ? WHERE id = ?",

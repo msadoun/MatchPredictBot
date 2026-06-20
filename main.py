@@ -2,10 +2,16 @@ import logging
 import sys
 
 from telegram import BotCommand, MenuButtonDefault
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from config import BOT_TOKEN
-from database import count_matches, ensure_world_cup_seeded, init_db, sync_match_open_flags
+from database import (
+    backfill_match_kickoff_times,
+    count_matches,
+    ensure_world_cup_seeded,
+    init_db,
+    sync_match_open_flags,
+)
 from handlers import (
     add_match_command,
     close_match_command,
@@ -46,6 +52,16 @@ async def post_init(application: Application) -> None:
             BotCommand("help", "المساعدة"),
         ]
     )
+    if application.job_queue:
+        application.job_queue.run_repeating(
+            _sync_open_matches_job, interval=300, first=60
+        )
+
+
+async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    synced = sync_match_open_flags()
+    if synced:
+        logger.info("Updated open/closed status on %d matches", synced)
 
 
 def main() -> None:
@@ -57,6 +73,9 @@ def main() -> None:
     seed_result = ensure_world_cup_seeded()
     if seed_result["added"]:
         logger.info("Seeded %d World Cup matches on startup", seed_result["added"])
+    backfilled = backfill_match_kickoff_times()
+    if backfilled:
+        logger.info("Backfilled kickoff times on %d matches", backfilled)
     synced = sync_match_open_flags()
     if synced:
         logger.info("Updated open/closed status on %d matches", synced)
