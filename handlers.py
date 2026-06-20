@@ -253,6 +253,67 @@ def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop(key, None)
 
 
+def _parse_score_input(text: str) -> tuple[int, int] | None:
+    cleaned = text.strip().replace(":", "-")
+    match = re.match(r"^(\d+)\s*[-–]\s*(\d+)$", cleaned)
+    if not match:
+        return None
+    home_score, away_score = int(match.group(1)), int(match.group(2))
+    if home_score < 0 or away_score < 0:
+        return None
+    return home_score, away_score
+
+
+def _scores_from_pick(
+    pick: str, first: int, second: int
+) -> tuple[int, int] | str:
+    if pick == "draw":
+        if first != second:
+            return msg.DRAW_SCORES_MUST_EQUAL
+        return first, second
+
+    if first == second:
+        return msg.UNEAQUAL_SCORES_FOR_WINNER
+
+    high, low = max(first, second), min(first, second)
+    if pick == "home":
+        return high, low
+    return low, high
+
+
+async def _prompt_score_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    match: db.Match,
+    pick: str,
+) -> None:
+    context.user_data["prediction_step"] = "entering_score"
+    context.user_data["prediction_match_id"] = match.id
+    context.user_data["prediction_pick"] = pick
+    context.user_data["prediction_home_team"] = match.home_team
+    context.user_data["prediction_away_team"] = match.away_team
+
+    if pick == "draw":
+        text = msg.PICK_DRAW_PROMPT.format(
+            id=match.id,
+            home=match.home_team,
+            vs=msg.VS,
+            away=match.away_team,
+            draw=msg.DRAW,
+        )
+    else:
+        winner = match.home_team if pick == "home" else match.away_team
+        text = msg.PICK_WINNER_PROMPT.format(
+            id=match.id,
+            home=match.home_team,
+            vs=msg.VS,
+            away=match.away_team,
+            winner=winner,
+        )
+
+    await edit_or_send_user(update, context, text, bot_username=BOT_USERNAME)
+
+
 def _winner_keyboard(match_id: int, home_team: str, away_team: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -298,34 +359,6 @@ async def _prompt_winner_pick(
         await reply_to_user(
             update, context, text, keyboard, bot_username=BOT_USERNAME
         )
-
-
-def _parse_score_input(text: str) -> tuple[int, int] | None:
-    cleaned = text.strip().replace(":", "-")
-    match = re.match(r"^(\d+)\s*[-–]\s*(\d+)$", cleaned)
-    if not match:
-        return None
-    home_score, away_score = int(match.group(1)), int(match.group(2))
-    if home_score < 0 or away_score < 0:
-        return None
-    return home_score, away_score
-
-
-def _scores_from_pick(
-    pick: str, first: int, second: int
-) -> tuple[int, int] | str:
-    if pick == "draw":
-        if first != second:
-            return msg.DRAW_SCORES_MUST_EQUAL
-        return first, second
-
-    if first == second:
-        return msg.UNEAQUAL_SCORES_FOR_WINNER
-
-    high, low = max(first, second), min(first, second)
-    if pick == "home":
-        return high, low
-    return low, high
 
 
 async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -415,6 +448,13 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if len(parts) < 3 or parts[0] != "pred":
         return
 
+    if parts[1] == "cancel":
+        _clear_prediction_state(context)
+        await edit_or_send_user(
+            update, context, msg.PREDICTION_CANCELLED, bot_username=BOT_USERNAME
+        )
+        return
+
     if parts[1] == "match" and len(parts) == 3:
         try:
             match_id = int(parts[2])
@@ -449,36 +489,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             _clear_prediction_state(context)
             return
 
-        context.user_data["prediction_step"] = "entering_score"
-        context.user_data["prediction_match_id"] = match_id
-        context.user_data["prediction_pick"] = pick
-        context.user_data["prediction_home_team"] = match.home_team
-        context.user_data["prediction_away_team"] = match.away_team
-
-        if pick == "draw":
-            pick_text = msg.PICK_DRAW_PROMPT.format(
-                id=match.id,
-                home=match.home_team,
-                vs=msg.VS,
-                away=match.away_team,
-                draw=msg.DRAW,
-            )
-        else:
-            if pick == "home":
-                winner_label = match.home_team
-            else:
-                winner_label = match.away_team
-
-            pick_text = msg.PICK_WINNER_PROMPT.format(
-                id=match.id,
-                home=match.home_team,
-                vs=msg.VS,
-                away=match.away_team,
-                winner=winner_label,
-            )
-        await edit_or_send_user(
-            update, context, pick_text, bot_username=BOT_USERNAME
-        )
+        await _prompt_score_text(update, context, match, pick)
 
 
 async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
