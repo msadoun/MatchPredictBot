@@ -4,7 +4,7 @@ Arabic Telegram bot for **FIFA World Cup 2026** match predictions, private leade
 
 **Repository:** [github.com/msadoun/MatchPredictBot](https://github.com/msadoun/MatchPredictBot)
 
-## Features
+## Featuresaaaaaaaa
 
 - World Cup 2026 fixtures (group stage + knockout rounds) with Arabic team names
 - Step-by-step prediction flow: pick match → choose winner/draw → enter score
