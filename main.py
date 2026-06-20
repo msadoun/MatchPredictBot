@@ -54,7 +54,7 @@ async def post_init(application: Application) -> None:
     )
     if application.job_queue:
         application.job_queue.run_repeating(
-            _sync_open_matches_job, interval=300, first=60
+            _sync_open_matches_job, interval=60, first=10
         )
 
 

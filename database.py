@@ -272,7 +272,7 @@ def list_matches(
 
 def count_matches(open_only: bool = False, on_date: str | None = None) -> int:
     if open_only:
-        return len(list_matches(open_only=True, on_date=on_date))
+        return len(list_predictable_matches(on_date=on_date))
 
     query = "SELECT COUNT(*) FROM matches"
     clauses: list[str] = []
@@ -289,17 +289,31 @@ def count_matches(open_only: bool = False, on_date: str | None = None) -> int:
         return int(conn.execute(query, params).fetchone()[0])
 
 
-def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
-    if match.home_score is not None and match.away_score is not None:
-        return False
-    if not match.is_open:
-        return False
+def match_has_started(match: Match, *, now: datetime | None = None) -> bool:
     if not match.kickoff_at:
-        return True
+        return False
     from worldcup2026 import kickoff_datetime
 
     check = now or datetime.utcnow()
-    return kickoff_datetime(match.kickoff_at) > check
+    return kickoff_datetime(match.kickoff_at) <= check
+
+
+def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
+    if match.home_score is not None and match.away_score is not None:
+        return False
+    if match_has_started(match, now=now):
+        return False
+    if not match.is_open:
+        return False
+    return True
+
+
+def list_predictable_matches(
+    limit: int | None = 25,
+    on_date: str | None = None,
+) -> list[Match]:
+    sync_match_open_flags()
+    return list_matches(open_only=True, on_date=on_date, limit=limit)
 
 
 def backfill_match_kickoff_times() -> int:
@@ -485,6 +499,10 @@ def save_prediction(
     *,
     group_chat_id: int = 0,
 ) -> Prediction:
+    match = get_match(match_id)
+    if not match or not match_accepts_predictions(match):
+        raise ValueError("match_not_open")
+
     now = datetime.utcnow().isoformat()
     with get_db() as conn:
         conn.execute(

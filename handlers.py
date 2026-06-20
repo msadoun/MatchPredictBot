@@ -211,12 +211,12 @@ async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    matches = db.list_matches(open_only=True, on_date=on_date, limit=25)
+    matches = db.list_predictable_matches(on_date=on_date, limit=25)
     total = db.count_matches(open_only=True, on_date=on_date)
     header = msg.OPEN_MATCHES_HEADER.format(date=on_date)
 
     if not matches and not context.args:
-        matches = db.list_matches(open_only=True, limit=25)
+        matches = db.list_predictable_matches(limit=25)
         total = db.count_matches(open_only=True)
         if matches:
             header = msg.UPCOMING_OPEN_MATCHES
@@ -363,12 +363,16 @@ def _match_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
 
 
 def _predictable_matches(limit: int = 25) -> tuple[list[db.Match], str]:
+    matches = db.list_predictable_matches(limit=limit)
     today = datetime.utcnow().strftime("%Y-%m-%d")
-    matches = db.list_matches(open_only=True, on_date=today, limit=limit)
-    prompt = msg.CHOOSE_MATCH.format(date=today)
-    if not matches:
-        matches = db.list_matches(open_only=True, limit=limit)
-        prompt = msg.CHOOSE_MATCH_UPCOMING
+    has_today = any(
+        m.kickoff_at and m.kickoff_at.startswith(today) for m in matches
+    )
+    prompt = (
+        msg.CHOOSE_MATCH.format(date=today)
+        if has_today
+        else msg.CHOOSE_MATCH_UPCOMING
+    )
     return matches, prompt
 
 
@@ -583,13 +587,20 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     group_chat_id = context.user_data.get("prediction_group_chat_id", 0)
-    db.save_prediction(
-        participant.id,
-        match_id,
-        home_score,
-        away_score,
-        group_chat_id=group_chat_id,
-    )
+    try:
+        db.save_prediction(
+            participant.id,
+            match_id,
+            home_score,
+            away_score,
+            group_chat_id=group_chat_id,
+        )
+    except ValueError:
+        _clear_prediction_state(context)
+        await reply_to_user(
+            update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
+        )
+        return
     _clear_prediction_state(context)
     await reply_to_user(
         update,

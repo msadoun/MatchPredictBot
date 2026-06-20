@@ -61,7 +61,7 @@ MATCH_HEADER = "المباراة #{id}\n{home} {vs} {away}"
 MATCH_ID_NOT_NUMBER = "رقم المباراة يجب أن يكون رقماً."
 MATCH_NOT_FOUND = "المباراة #{id} غير موجودة."
 MATCH_CLOSED = "المباراة #{id} مغلقة. لم يعد بإمكانك التوقع."
-MATCH_NO_LONGER_OPEN = "هذه المباراة لم تعد مفتوحة للتوقعات."
+MATCH_NO_LONGER_OPEN = "هذه المباراة بدأت أو أُغلقت — لم يعد بإمكانك التوقع."
 
 PICK_WINNER_PROMPT = (
     "المباراة #{id}: {home} {vs} {away}\n"
