@@ -159,6 +159,11 @@ def _resolve_leaderboard_group(
     if stored:
         return int(stored), False
 
+    active = db.get_user_active_group(participant.id)
+    if active:
+        context.user_data["leaderboard_group_chat_id"] = active
+        return active, False
+
     groups = db.get_user_group_chat_ids(participant.id)
     if len(groups) == 1:
         context.user_data["leaderboard_group_chat_id"] = groups[0]
@@ -226,29 +231,30 @@ async def leaderboard_callback(
         await _show_group_leaderboard_picker(update, context, participant)
         return
 
-    if len(parts) != 3 or parts[1] != "group":
-        return
-
-    try:
-        chat_id = int(parts[2])
-    except ValueError:
-        return
-
     user = update.effective_user
-    if user:
-        participant = db.get_user_by_telegram_id(user.id)
-        if participant:
-            groups = db.get_user_group_chat_ids(participant.id)
-            if chat_id not in groups:
-                return
+    if not user:
+        return
 
-    context.user_data["leaderboard_group_chat_id"] = chat_id
-    await send_leaderboard(
-        update,
-        context,
-        viewer_telegram_id=user.id if user else None,
-        group_chat_id=chat_id,
-    )
+    participant = db.get_user_by_telegram_id(user.id)
+    if not participant:
+        return
+
+    if parts[1] == "group":
+        try:
+            chat_id = int(parts[2])
+        except (ValueError, IndexError):
+            return
+        groups = db.get_user_group_chat_ids(participant.id)
+        if chat_id not in groups:
+            return
+        context.user_data["leaderboard_group_chat_id"] = chat_id
+        db.set_user_active_group(participant.id, chat_id)
+        await send_leaderboard(
+            update,
+            context,
+            viewer_telegram_id=user.id,
+            group_chat_id=chat_id,
+        )
 
 
 async def user_response(
@@ -387,7 +393,7 @@ def _track_group_member(update: Update, participant: db.User) -> None:
         return
     chat = update.effective_chat
     if chat:
-        db.register_group_member(chat.id, participant.id)
+        db.set_user_active_group(participant.id, chat.id)
 
 
 def _ensure_participant(update: Update) -> db.User | None:
@@ -408,6 +414,20 @@ def _ensure_participant(update: Update) -> db.User | None:
 def _group_chat_id(update: Update) -> int:
     if is_group_chat(update) and update.effective_chat:
         return update.effective_chat.id
+    return 0
+
+
+def _prediction_group_chat_id(
+    context: ContextTypes.DEFAULT_TYPE,
+    participant: db.User | None,
+) -> int:
+    from_user_data = context.user_data.get("prediction_group_chat_id")
+    if from_user_data:
+        return int(from_user_data)
+    if participant:
+        active = db.get_user_active_group(participant.id)
+        if active:
+            return active
     return 0
 
 
@@ -577,7 +597,9 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     group_chat_id = _group_chat_id(update)
     _clear_prediction_state(context)
     context.user_data["prediction_group_chat_id"] = group_chat_id
-    if group_chat_id:
+    participant = db.get_user_by_telegram_id(user.id)
+    if group_chat_id and participant:
+        db.set_user_active_group(participant.id, group_chat_id)
         context.user_data["leaderboard_group_chat_id"] = group_chat_id
 
     if context.args:
@@ -734,7 +756,7 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    group_chat_id = context.user_data.get("prediction_group_chat_id", 0)
+    group_chat_id = _prediction_group_chat_id(context, participant)
     try:
         db.save_prediction(
             participant.id,
@@ -780,6 +802,9 @@ async def my_predictions_command(
 
     group_chat_id = _group_chat_id(update)
     _track_group_member(update, participant)
+    if not group_chat_id:
+        active = db.get_user_active_group(participant.id)
+        group_chat_id = active or 0
     predictions = db.get_user_predictions(
         participant.id,
         group_chat_id=group_chat_id if group_chat_id else None,

@@ -160,6 +160,15 @@ def init_db() -> None:
             """
         )
         _migrate_predictions_for_groups(conn)
+        _migrate_users_active_group(conn)
+
+
+def _migrate_users_active_group(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()
+    }
+    if "active_group_chat_id" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN active_group_chat_id INTEGER")
 
 
 def _migrate_predictions_for_groups(conn: sqlite3.Connection) -> None:
@@ -216,6 +225,28 @@ def get_user_by_telegram_id(telegram_id: int) -> User | None:
             "SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)
         ).fetchone()
     return _row_to_user(row) if row else None
+
+
+def set_user_active_group(user_id: int, chat_id: int) -> None:
+    if not chat_id:
+        return
+    register_group_member(chat_id, user_id)
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET active_group_chat_id = ? WHERE id = ?",
+            (chat_id, user_id),
+        )
+
+
+def get_user_active_group(user_id: int) -> int | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT active_group_chat_id FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    if row and row["active_group_chat_id"]:
+        return int(row["active_group_chat_id"])
+    return None
 
 
 def add_match(home_team: str, away_team: str, kickoff_at: str | None = None) -> Match:
