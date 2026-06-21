@@ -206,6 +206,12 @@ SETGROUPPOINTS_APPLIED_ROW = "• {line}"
 SETGROUPPOINTS_MISSING_ROW = "• {ref}"
 SETGROUPPOINTS_ONE_DONE = "تم تعيين {name}: {points} نقطة في المجموعة «{group}»."
 SETGROUPPOINTS_GROUP_NOT_FOUND = "تعذّر العثور على المجموعة. تأكد أن البوت عضو فيها، أو عيّن ALKORAM3NA_GROUP_CHAT_ID."
+SETGROUPPOINTS_NOTE = "ملاحظة: النقاط اليدوية للوحة المتصدرين فقط — التوقعات الفعلية تبقى محفوظة."
+
+BACKUP_PREDICTIONS_DONE = "تم حفظ نسخة احتياطية: {count} توقع في {filename}"
+RESTORE_PREDICTIONS_DONE = "تم استرجاع {restored} توقع. تُخطّى {skipped} (موجود مسبقاً)."
+RESTORE_PREDICTIONS_EMPTY = "لا توجد نسخة احتياطية للتوقعات."
+RESTORE_PREDICTIONS_USAGE = "الاستخدام: /restorepredictions"
 
 NO_MATCHES_YET = "لم تُنشأ أي مباريات بعد."
 ALL_MATCHES = "جميع المباريات:\n"

@@ -17,6 +17,7 @@ from handlers import (
     add_match_command,
     admin_predictions_callback,
     admin_predictions_command,
+    backup_predictions_command,
     close_match_command,
     open_match_command,
     group_welcome,
@@ -32,6 +33,7 @@ from handlers import (
     predict_cancel_command,
     predict_command,
     predict_score_message,
+    restore_predictions_command,
     set_group_points_command,
     set_prediction_command,
     set_result_command,
@@ -94,6 +96,14 @@ def main() -> None:
         sys.exit(1)
 
     init_db()
+    from prediction_backup import backup_predictions_if_needed, maybe_auto_restore_predictions
+
+    restored = maybe_auto_restore_predictions()
+    if restored:
+        logger.info("Auto-restored %d predictions from backup", restored)
+    backup_path = backup_predictions_if_needed()
+    if backup_path:
+        logger.info("Predictions backup saved: %s", backup_path.name)
     seed_result = ensure_world_cup_seeded()
     if seed_result["added"]:
         logger.info("Seeded %d World Cup matches on startup", seed_result["added"])
@@ -137,6 +147,8 @@ def main() -> None:
     app.add_handler(CommandHandler("closematch", close_match_command))
     app.add_handler(CommandHandler("openmatch", open_match_command))
     app.add_handler(CommandHandler("setgrouppoints", set_group_points_command))
+    app.add_handler(CommandHandler("backuppredictions", backup_predictions_command))
+    app.add_handler(CommandHandler("restorepredictions", restore_predictions_command))
     app.add_handler(CommandHandler("syncscores", sync_scores_command))
     app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))

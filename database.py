@@ -320,6 +320,14 @@ def _migrate_predictions_for_groups(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
         );
+        INSERT INTO predictions_new (
+            user_id, match_id, chat_id, home_score, away_score,
+            points, created_at, updated_at
+        )
+        SELECT
+            user_id, match_id, 0, home_score, away_score,
+            points, created_at, updated_at
+        FROM predictions;
         DROP TABLE predictions;
         ALTER TABLE predictions_new RENAME TO predictions;
         """
@@ -433,6 +441,7 @@ def resolve_user_ref(user_ref: str) -> User | None:
 
 
 def set_group_manual_points(chat_id: int, user_id: int, points: int) -> None:
+    """Set manual leaderboard total for a group. Does not change predictions."""
     register_group_member(chat_id, user_id)
     now = datetime.utcnow().isoformat()
     with get_db() as conn:

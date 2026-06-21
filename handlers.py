@@ -1698,6 +1698,7 @@ async def set_group_points_command(
             lines.extend(
                 msg.SETGROUPPOINTS_MISSING_ROW.format(ref=ref) for ref in not_found
             )
+        lines.append(f"\n{msg.SETGROUPPOINTS_NOTE}")
         await reply_to_user(
             update,
             context,
@@ -1752,6 +1753,71 @@ async def set_group_points_command(
             points=points,
             group=group_label,
         ),
+        bot_username=BOT_USERNAME,
+    )
+
+
+async def backup_predictions_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    from prediction_backup import backup_predictions, count_predictions
+
+    path = backup_predictions(force=True)
+    if not path:
+        await reply_to_user(
+            update,
+            context,
+            msg.RESTORE_PREDICTIONS_EMPTY,
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    await reply_to_user(
+        update,
+        context,
+        msg.BACKUP_PREDICTIONS_DONE.format(
+            count=count_predictions(),
+            filename=path.name,
+        ),
+        bot_username=BOT_USERNAME,
+    )
+
+
+async def restore_predictions_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    from prediction_backup import latest_backup_path, restore_predictions_from_file
+
+    path = latest_backup_path()
+    if not path:
+        await reply_to_user(
+            update,
+            context,
+            msg.RESTORE_PREDICTIONS_EMPTY,
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    restored, skipped = restore_predictions_from_file(path)
+    db.recalculate_all_prediction_points()
+    await reply_to_user(
+        update,
+        context,
+        msg.RESTORE_PREDICTIONS_DONE.format(restored=restored, skipped=skipped),
         bot_username=BOT_USERNAME,
     )
 
