@@ -85,7 +85,7 @@ def _find_match_id(home_ar: str, away_ar: str, iso_date: str) -> int | None:
     return int(row["id"]) if row else None
 
 
-def sync_match_results_from_espn(days_back: int = 3, days_ahead: int = 1) -> dict[str, int]:
+def sync_match_results_from_espn(days_back: int = 14, days_ahead: int = 1) -> dict[str, int]:
     today = datetime.utcnow().date()
     updated = 0
     scanned = 0

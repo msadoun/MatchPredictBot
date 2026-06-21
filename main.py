@@ -77,6 +77,10 @@ async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             )
     except Exception as exc:
         logger.warning("ESPN results sync failed: %s", exc)
+    if PREDICTION_BACKFILLS.strip():
+        backfilled = apply_prediction_backfills(PREDICTION_BACKFILLS)
+        if backfilled:
+            logger.info("Applied %d prediction backfill(s) in sync job", backfilled)
     recalculated = recalculate_all_prediction_points()
     if recalculated:
         logger.info("Recalculated points on %d predictions", recalculated)

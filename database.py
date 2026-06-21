@@ -339,6 +339,32 @@ def get_match(match_id: int) -> Match | None:
     return _row_to_match(row) if row else None
 
 
+def get_match_by_teams(home_team: str, away_team: str) -> Match | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM matches WHERE home_team = ? AND away_team = ?",
+            (home_team, away_team),
+        ).fetchone()
+    return _row_to_match(row) if row else None
+
+
+def resolve_user_ref(user_ref: str) -> User | None:
+    ref = user_ref.strip().lstrip("@")
+    if ref.isdigit():
+        user = get_user_by_telegram_id(int(ref))
+        if user:
+            return user
+    user = get_user_by_username(ref)
+    if user:
+        return user
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE LOWER(display_name) LIKE LOWER(?) LIMIT 1",
+            (f"%{ref}%",),
+        ).fetchone()
+    return _row_to_user(row) if row else None
+
+
 def list_matches(
     open_only: bool = False,
     limit: int | None = None,
@@ -783,6 +809,15 @@ def user_has_prediction(user_id: int, match_id: int) -> bool:
             (user_id, match_id),
         ).fetchone()
     return row is not None
+
+
+def get_user_prediction(user_id: int, match_id: int) -> Prediction | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM predictions WHERE user_id = ? AND match_id = ? LIMIT 1",
+            (user_id, match_id),
+        ).fetchone()
+    return _row_to_prediction(row) if row else None
 
 
 def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
