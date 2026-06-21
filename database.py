@@ -390,6 +390,31 @@ def list_predictable_matches(
     return list_matches(open_only=True, on_date=day, limit=limit)
 
 
+def resolve_active_match_day(
+    start_day: str | None = None,
+    *,
+    max_days: int = 45,
+) -> str | None:
+    """First match-day from start_day with at least one open predictable match."""
+    from worldcup2026 import current_match_day
+
+    day = start_day or current_match_day()
+    for _ in range(max_days):
+        if list_predictable_matches(on_date=day, limit=1, match_day_only=True):
+            return day
+        day = (datetime.fromisoformat(day) + timedelta(days=1)).strftime("%Y-%m-%d")
+    return None
+
+
+def list_active_day_predictable_matches(
+    limit: int | None = 25,
+) -> tuple[str | None, list[Match]]:
+    day = resolve_active_match_day()
+    if not day:
+        return None, []
+    return day, list_predictable_matches(on_date=day, limit=limit, match_day_only=True)
+
+
 def backfill_match_kickoff_times() -> int:
     from worldcup2026 import WORLD_CUP_2026_FIXTURES, kickoff_label
 

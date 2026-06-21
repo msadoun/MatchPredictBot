@@ -364,15 +364,20 @@ async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    matches = db.list_predictable_matches(on_date=on_date, limit=25)
-    total = db.count_matches(open_only=True, on_date=on_date)
-    header = msg.OPEN_MATCHES_HEADER.format(date=on_date)
-
-    if not matches and not context.args:
-        matches = db.list_predictable_matches(limit=25, match_day_only=False)
-        total = len(matches)
-        if matches:
-            header = msg.UPCOMING_OPEN_MATCHES
+    if context.args:
+        matches = db.list_predictable_matches(on_date=on_date, limit=25)
+        total = db.count_matches(open_only=True, on_date=on_date)
+        header = msg.OPEN_MATCHES_HEADER.format(date=on_date)
+    else:
+        active_day, matches = db.list_active_day_predictable_matches(limit=25)
+        if not active_day:
+            matches = []
+            total = 0
+            header = ""
+        else:
+            on_date = active_day
+            total = db.count_matches(open_only=True, on_date=on_date)
+            header = msg.OPEN_MATCHES_HEADER.format(date=on_date)
 
     if not matches:
         await user_response(
@@ -520,16 +525,10 @@ def _match_picker_keyboard(
 
 
 def _predictable_matches(limit: int = 25) -> tuple[list[db.Match], str]:
-    from worldcup2026 import current_match_day
-
-    match_day = current_match_day()
-    matches = db.list_predictable_matches(on_date=match_day, limit=limit)
-    if not matches:
-        matches = db.list_predictable_matches(limit=limit, match_day_only=False)
-        prompt = msg.CHOOSE_MATCH_UPCOMING
-    else:
-        prompt = msg.CHOOSE_MATCH.format(date=match_day)
-    return matches, prompt
+    match_day, matches = db.list_active_day_predictable_matches(limit=limit)
+    if not match_day:
+        return [], msg.NO_OPEN_MATCHES
+    return matches, msg.CHOOSE_MATCH.format(date=match_day)
 
 
 async def _show_match_picker(
