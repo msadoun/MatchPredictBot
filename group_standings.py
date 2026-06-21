@@ -26,14 +26,14 @@ KM3NA_GROUP_USERNAME = "km3na"
 KM3NA_INVITE_SLUG = "2tiecpegwjo8wotg0"
 
 KM3NA_STANDINGS: list[tuple[str, int]] = [
-    ("M2usab", 24),
-    ("waelalamoudi", 19),
-    ("Abdullah7K", 22),
-    ("AbduIIah7k", 22),
-    ("HMAsir0", 4),
-    ("حازم .", 17),
-    ("shamlan1998", 1),
+    ("M2usab", 27),
+    ("AbduIIah7k", 25),
+    ("Abdullah7K", 25),
+    ("waelalamoudi", 22),
+    ("حازم .", 21),
     ("AHMED", 17),
+    ("HMAsir0", 7),
+    ("shamlan1998", 1),
 ]
 
 # K m3na groub — Telegram supergroup (user ID: 1001298782951 → -1001298782951)
@@ -95,7 +95,7 @@ def resolve_roster_user(ref: str):
 
 
 def roster_manual_points(ref: str) -> int | None:
-    """Manual base points for a roster member in ROSTER_GROUP_CHAT_ID."""
+    """Target leaderboard total for a roster member (base + existing prediction pts)."""
     aliases = {a.lower() for a in EXCEL_USER_ALIASES.get(ref, (ref,))}
     aliases.add(ref.strip().lstrip("@").lower())
     for name, points in KM3NA_STANDINGS:

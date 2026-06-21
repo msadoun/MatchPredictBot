@@ -431,19 +431,46 @@ def set_group_manual_points(chat_id: int, user_id: int, points: int) -> None:
         )
 
 
+def user_scored_prediction_points(user_id: int) -> int:
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(COALESCE(points, 0)), 0)
+            FROM predictions
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+    return int(row[0] or 0)
+
+
+def set_group_manual_points_for_total(
+    chat_id: int, user_id: int, target_total: int
+) -> None:
+    """Set manual base so target_total = base + existing scored prediction points."""
+    base = max(0, target_total - user_scored_prediction_points(user_id))
+    set_group_manual_points(chat_id, user_id, base)
+
+
 def bulk_set_group_manual_points(
     chat_id: int,
     standings: list[tuple[str, int]],
 ) -> tuple[list[str], list[str]]:
     """Apply manual points. Returns (applied lines, not_found refs)."""
+    from group_standings import ROSTER_GROUP_CHAT_ID
+
     applied: list[str] = []
     not_found: list[str] = []
+    use_totals = chat_id == ROSTER_GROUP_CHAT_ID
     for user_ref, points in standings:
         user = resolve_user_ref(user_ref)
         if not user:
             not_found.append(user_ref)
             continue
-        set_group_manual_points(chat_id, user.id, points)
+        if use_totals:
+            set_group_manual_points_for_total(chat_id, user.id, points)
+        else:
+            set_group_manual_points(chat_id, user.id, points)
         label = user.display_name
         if user.username:
             label += f" (@{user.username})"
@@ -1212,9 +1239,9 @@ def ensure_excel_roster_group_members() -> int:
             continue
 
         register_group_member(ROSTER_GROUP_CHAT_ID, user.id)
-        points = roster_manual_points(ref)
-        if points is not None:
-            set_group_manual_points(ROSTER_GROUP_CHAT_ID, user.id, points)
+        target = roster_manual_points(ref)
+        if target is not None:
+            set_group_manual_points_for_total(ROSTER_GROUP_CHAT_ID, user.id, target)
         registered += 1
 
     if registered:
@@ -1245,6 +1272,10 @@ def refresh_group_auto_points(chat_id: int) -> None:
 def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
     """Set configured auto base points for a user in a group (added to prediction pts)."""
     from group_auto_points import auto_group_points_for_user
+    from group_standings import ROSTER_GROUP_CHAT_ID
+
+    if chat_id == ROSTER_GROUP_CHAT_ID:
+        return False
 
     with get_db() as conn:
         row = conn.execute(
