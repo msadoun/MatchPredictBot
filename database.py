@@ -65,7 +65,7 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
             u.telegram_id,
             u.display_name,
             u.username,
-            COALESCE(MAX(gmp.points), COALESCE(SUM(p.points), 0)) AS total_points,
+            COALESCE(MAX(gmp.points), 0) + COALESCE(SUM(p.points), 0) AS total_points,
             COUNT(p.id) AS predictions_count,
             COALESCE(SUM(CASE WHEN p.points = 3 THEN 1 ELSE 0 END), 0) AS exact_hits,
             COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
@@ -75,7 +75,7 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
         LEFT JOIN group_manual_points gmp ON gmp.user_id = u.id AND gmp.chat_id = ?
         LEFT JOIN predictions p ON p.user_id = u.id
         GROUP BY u.id
-        HAVING COALESCE(MAX(gmp.points), COALESCE(SUM(p.points), 0)) > 0 OR COUNT(p.id) > 0
+        HAVING COALESCE(MAX(gmp.points), 0) > 0 OR COUNT(p.id) > 0
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
         """
         return sql, params
@@ -405,7 +405,7 @@ def resolve_user_ref(user_ref: str) -> User | None:
 
 
 def set_group_manual_points(chat_id: int, user_id: int, points: int) -> None:
-    """Set manual leaderboard total for a group. Does not change predictions."""
+    """Set manual base points for a group — added on top of prediction points."""
     register_group_member(chat_id, user_id)
     now = datetime.utcnow().isoformat()
     with get_db() as conn:
@@ -1097,7 +1097,7 @@ def register_group_member(chat_id: int, user_id: int) -> None:
 
 
 def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
-    """Set configured auto points for a user in a group (leaderboard only)."""
+    """Set configured auto base points for a user in a group (added to prediction pts)."""
     from group_auto_points import auto_group_points_for_user
 
     with get_db() as conn:

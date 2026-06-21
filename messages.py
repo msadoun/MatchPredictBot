@@ -209,14 +209,14 @@ SETGROUPPOINTS_LOAD_DONE = (
 )
 SETGROUPPOINTS_APPLIED_ROW = "• {line}"
 SETGROUPPOINTS_MISSING_ROW = "• {ref}"
-SETGROUPPOINTS_ONE_DONE = "تم تعيين {name}: {points} نقطة في المجموعة «{group}»."
+SETGROUPPOINTS_ONE_DONE = "تم تعيين {name}: {points} نقطة أساسية في المجموعة «{group}» (تُضاف لتوقعاته)."
 SETGROUPPOINTS_GROUP_NOT_FOUND = (
     "تعذّر العثور على المجموعة. أضف البوت للمجموعة، أو شغّل الأمر من داخلها، "
     "أو عيّن ALKORAM3NA_GROUP_CHAT_ID / KM3NA_GROUP_CHAT_ID."
 )
 SETGROUPPOINTS_NOTE = (
-    "ملاحظة: النقاط اليدوية للوحة المتصدرين فقط — "
-    "التوقعات الفعلية وملفات Excel لا تُحذف ولا تُستبدل."
+    "ملاحظة: النقاط اليدوية = نقاط أساسية تُضاف فوق نقاط التوقعات الجديدة. "
+    "التوقعات الفعلية وملفات Excel لا تُحذف."
 )
 
 BACKUP_PREDICTIONS_DONE = "تم حفظ نسخة احتياطية: {count} توقع في {filename}"
@@ -227,8 +227,8 @@ RESTORE_PREDICTIONS_DONE = (
 RESTORE_PREDICTIONS_EMPTY = "لا توجد نسخة احتياطية للتوقعات."
 RESTORE_PREDICTIONS_USAGE = "الاستخدام: /restorepredictions"
 PREDICTIONS_NEVER_DELETED = (
-    "التوقعات وملفات Excel محفوظة ولا تُحذف تلقائياً. "
-    "النقاط اليدوية للمجموعة لا تمس التوقعات الفعلية."
+    "التوقعات وملفات Excel محفوظة. "
+    "النقاط اليدوية للمجموعة تُضاف فوق نقاط التوقعات."
 )
 
 NO_MATCHES_YET = "لم تُنشأ أي مباريات بعد."
