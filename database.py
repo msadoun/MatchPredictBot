@@ -11,6 +11,9 @@ from scoring import calculate_points
 
 logger = logging.getLogger(__name__)
 
+# chat_id=0 → one global manual base per user (same total in every group leaderboard)
+GLOBAL_MANUAL_POINTS_CHAT_ID = 0
+
 
 @dataclass
 class User:
@@ -58,7 +61,6 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
     params: list[object] = []
     if group_chat_id is not None:
         params.append(group_chat_id)
-        params.append(group_chat_id)
         sql = """
         SELECT
             u.id,
@@ -72,12 +74,14 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
             COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
         FROM users u
         INNER JOIN group_members gm ON gm.user_id = u.id AND gm.chat_id = ?
-        LEFT JOIN group_manual_points gmp ON gmp.user_id = u.id AND gmp.chat_id = ?
+        LEFT JOIN group_manual_points gmp
+            ON gmp.user_id = u.id AND gmp.chat_id = ?
         LEFT JOIN predictions p ON p.user_id = u.id
         GROUP BY u.id
         HAVING COALESCE(MAX(gmp.points), 0) > 0 OR COUNT(p.id) > 0
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
         """
+        params.append(GLOBAL_MANUAL_POINTS_CHAT_ID)
         return sql, params
 
     sql = """
@@ -194,6 +198,7 @@ def init_db() -> None:
         _migrate_predictions_override(conn)
         _migrate_prediction_exports(conn)
         _migrate_group_manual_points(conn)
+        _migrate_global_manual_points(conn)
 
 
 @dataclass
@@ -244,6 +249,45 @@ def _migrate_group_manual_points(conn: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def _migrate_global_manual_points(conn: sqlite3.Connection) -> None:
+    """Copy per-group manual points to chat_id=0 so totals match across groups."""
+    from group_standings import ROSTER_GROUP_CHAT_ID
+
+    rows = conn.execute(
+        """
+        SELECT user_id, chat_id, points FROM group_manual_points
+        WHERE chat_id != ?
+        ORDER BY user_id, chat_id
+        """,
+        (GLOBAL_MANUAL_POINTS_CHAT_ID,),
+    ).fetchall()
+    if not rows:
+        return
+
+    by_user: dict[int, int] = {}
+    for row in rows:
+        user_id = int(row["user_id"])
+        chat_id = int(row["chat_id"])
+        points = int(row["points"])
+        if chat_id == ROSTER_GROUP_CHAT_ID:
+            by_user[user_id] = points
+        elif user_id not in by_user:
+            by_user[user_id] = points
+
+    now = datetime.utcnow().isoformat()
+    for user_id, points in by_user.items():
+        conn.execute(
+            """
+            INSERT INTO group_manual_points (chat_id, user_id, points, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(chat_id, user_id) DO UPDATE SET
+                points = excluded.points,
+                updated_at = excluded.updated_at
+            """,
+            (GLOBAL_MANUAL_POINTS_CHAT_ID, user_id, points, now),
+        )
 
 
 def _migrate_prediction_exports(conn: sqlite3.Connection) -> None:
@@ -414,9 +458,7 @@ def resolve_user_ref(user_ref: str) -> User | None:
     return None
 
 
-def set_group_manual_points(chat_id: int, user_id: int, points: int) -> None:
-    """Set manual base points for a group — added on top of prediction points."""
-    register_group_member(chat_id, user_id)
+def set_global_manual_points(user_id: int, points: int) -> None:
     now = datetime.utcnow().isoformat()
     with get_db() as conn:
         conn.execute(
@@ -427,8 +469,15 @@ def set_group_manual_points(chat_id: int, user_id: int, points: int) -> None:
                 points = excluded.points,
                 updated_at = excluded.updated_at
             """,
-            (chat_id, user_id, points, now),
+            (GLOBAL_MANUAL_POINTS_CHAT_ID, user_id, points, now),
         )
+
+
+def set_group_manual_points(chat_id: int, user_id: int, points: int) -> None:
+    """Set global manual base points — same score in every group leaderboard."""
+    if chat_id:
+        register_group_member(chat_id, user_id)
+    set_global_manual_points(user_id, points)
 
 
 def user_scored_prediction_points(user_id: int) -> int:
@@ -445,13 +494,18 @@ def user_scored_prediction_points(user_id: int) -> int:
 
 
 def get_group_manual_points(chat_id: int, user_id: int) -> int | None:
+    lookup_chat_id = (
+        GLOBAL_MANUAL_POINTS_CHAT_ID
+        if chat_id != GLOBAL_MANUAL_POINTS_CHAT_ID
+        else chat_id
+    )
     with get_db() as conn:
         row = conn.execute(
             """
             SELECT points FROM group_manual_points
             WHERE chat_id = ? AND user_id = ?
             """,
-            (chat_id, user_id),
+            (lookup_chat_id, user_id),
         ).fetchone()
     return int(row["points"]) if row else None
 
@@ -1282,7 +1336,7 @@ def apply_roster_group_standings(*, force: bool = False) -> int:
         if target is None:
             continue
 
-        if not force and get_group_manual_points(ROSTER_GROUP_CHAT_ID, user.id) is not None:
+        if not force and get_group_manual_points(GLOBAL_MANUAL_POINTS_CHAT_ID, user.id) is not None:
             continue
 
         set_group_manual_points_for_total(ROSTER_GROUP_CHAT_ID, user.id, target)
@@ -1310,11 +1364,10 @@ def refresh_group_auto_points(chat_id: int) -> None:
 
 
 def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
-    """Set configured auto base points for a user in a group (added to prediction pts)."""
+    """Set configured auto base points (global — same in all groups)."""
     from group_auto_points import auto_group_points_for_user
-    from group_standings import ROSTER_GROUP_CHAT_ID
 
-    if chat_id == ROSTER_GROUP_CHAT_ID:
+    if get_group_manual_points(GLOBAL_MANUAL_POINTS_CHAT_ID, user_id) is not None:
         return False
 
     with get_db() as conn:
@@ -1332,18 +1385,7 @@ def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
     if points is None:
         return False
 
-    now = datetime.utcnow().isoformat()
-    with get_db() as conn:
-        conn.execute(
-            """
-            INSERT INTO group_manual_points (chat_id, user_id, points, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(chat_id, user_id) DO UPDATE SET
-                points = excluded.points,
-                updated_at = excluded.updated_at
-            """,
-            (chat_id, user_id, points, now),
-        )
+    set_global_manual_points(user_id, points)
     return True
 
 
@@ -1430,7 +1472,7 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
                     HAVING COALESCE(MAX(gmp.points), 0) > 0 OR COUNT(p.id) > 0
                 )
                 """,
-                (group_chat_id, group_chat_id),
+                (group_chat_id, GLOBAL_MANUAL_POINTS_CHAT_ID),
             ).fetchone()[0]
         )
 
