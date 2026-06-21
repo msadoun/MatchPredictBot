@@ -72,15 +72,12 @@ def _needs_backfill(user_id: int, match_id: int, home_score: int, away_score: in
     existing = get_user_prediction(user_id, match_id)
     if not existing:
         return True
-    if existing.home_score != home_score or existing.away_score != away_score:
-        return True
-    if existing.points is None:
-        return True
+    # Never overwrite an existing prediction — only fill in missing rows.
     return False
 
 
 def apply_prediction_backfills(raw: str) -> int:
-    """Ensure known missing predictions exist and are scored."""
+    """Insert missing predictions only — never change existing picks."""
     applied = 0
     for user_ref, requested_match_id, home_score, away_score in parse_prediction_backfills(raw):
         user = resolve_user_ref(user_ref)

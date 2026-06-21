@@ -13,9 +13,9 @@ ADMIN_USER_IDS = {
 }
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "data/bot.db"))
 
-_DEFAULT_PREDICTION_BACKFILLS = "M2usab:35:3-0,10140530:35:3-0,Musab:35:3-0"
+_DEFAULT_PREDICTION_BACKFILLS = ""
 _raw_backfills = os.getenv("PREDICTION_BACKFILLS")
-if _raw_backfills is None or not _raw_backfills.strip():
+if _raw_backfills is None:
     PREDICTION_BACKFILLS = _DEFAULT_PREDICTION_BACKFILLS
 else:
     PREDICTION_BACKFILLS = _raw_backfills.strip()

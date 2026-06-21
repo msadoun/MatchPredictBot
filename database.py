@@ -203,6 +203,13 @@ def _migrate_predictions_override(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_predictions_global(conn: sqlite3.Connection) -> None:
+    conn.execute("UPDATE predictions SET chat_id = 0 WHERE chat_id != 0")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_user_match
+        ON predictions(user_id, match_id)
+        """
+    )
     dupes = conn.execute(
         """
         SELECT user_id, match_id
@@ -211,6 +218,8 @@ def _migrate_predictions_global(conn: sqlite3.Connection) -> None:
         HAVING COUNT(*) > 1
         """
     ).fetchall()
+    if not dupes:
+        return
     for dupe in dupes:
         rows = conn.execute(
             """
@@ -225,13 +234,6 @@ def _migrate_predictions_global(conn: sqlite3.Connection) -> None:
         ).fetchall()
         for row in rows[1:]:
             conn.execute("DELETE FROM predictions WHERE id = ?", (row["id"],))
-    conn.execute("UPDATE predictions SET chat_id = 0 WHERE chat_id != 0")
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_user_match
-        ON predictions(user_id, match_id)
-        """
-    )
 
 
 def _migrate_users_active_group(conn: sqlite3.Connection) -> None:
@@ -669,10 +671,6 @@ def open_match(match_id: int, *, clear_result: bool = False) -> Match | None:
                 """,
                 (match_id,),
             )
-            conn.execute(
-                "UPDATE predictions SET points = NULL WHERE match_id = ?",
-                (match_id,),
-            )
         else:
             conn.execute(
                 """
@@ -775,14 +773,6 @@ def save_prediction(
             keep_id = rows[0]["id"]
             for row in rows[1:]:
                 conn.execute("DELETE FROM predictions WHERE id = ?", (row["id"],))
-            conn.execute(
-                """
-                UPDATE predictions
-                SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?, points = NULL
-                WHERE id = ?
-                """,
-                (home_score, away_score, now, keep_id),
-            )
             if match.home_score is not None and match.away_score is not None:
                 points = calculate_points(
                     home_score,
@@ -791,8 +781,21 @@ def save_prediction(
                     match.away_score,
                 )
                 conn.execute(
-                    "UPDATE predictions SET points = ? WHERE id = ?",
-                    (points, keep_id),
+                    """
+                    UPDATE predictions
+                    SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?, points = ?
+                    WHERE id = ?
+                    """,
+                    (home_score, away_score, now, points, keep_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE predictions
+                    SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?, points = NULL
+                    WHERE id = ?
+                    """,
+                    (home_score, away_score, now, keep_id),
                 )
         else:
             cursor = conn.execute(
