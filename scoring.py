@@ -12,6 +12,7 @@ def calculate_points(
     actual_home: int,
     actual_away: int,
 ) -> int:
+    """3 exact | 2 correct winner + winner goals | 1 correct winner | 0 otherwise."""
     if predicted_home == actual_home and predicted_away == actual_away:
         return 3
 

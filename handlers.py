@@ -532,21 +532,29 @@ def _parse_score_input(text: str) -> tuple[int, int] | None:
     return home_score, away_score
 
 
-def _scores_from_pick(
-    pick: str, first: int, second: int
-) -> tuple[int, int] | str:
+def _validate_score_for_pick(
+    pick: str,
+    home_score: int,
+    away_score: int,
+    home_team: str,
+    away_team: str,
+) -> str | None:
+    score_label = f"{home_score}-{away_score}"
     if pick == "draw":
-        if first != second:
+        if home_score != away_score:
             return msg.DRAW_SCORES_MUST_EQUAL
-        return first, second
-
-    if first == second:
+        return None
+    if home_score == away_score:
         return msg.UNEAQUAL_SCORES_FOR_WINNER
-
-    high, low = max(first, second), min(first, second)
-    if pick == "home":
-        return high, low
-    return low, high
+    if pick == "home" and home_score < away_score:
+        return msg.SCORE_CONFLICT_HOME.format(
+            home=home_team, away=away_team, score=score_label
+        )
+    if pick == "away" and away_score < home_score:
+        return msg.SCORE_CONFLICT_AWAY.format(
+            home=home_team, away=away_team, score=score_label
+        )
+    return None
 
 
 async def _prompt_score_text(
@@ -846,16 +854,17 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     pick = context.user_data["prediction_pick"]
-    if parsed[0] == parsed[1]:
-        home_score, away_score = parsed[0], parsed[1]
-    else:
-        result = _scores_from_pick(pick, parsed[0], parsed[1])
-        if isinstance(result, str):
-            await reply_to_user(
-                update, context, f"{result}\n{msg.SEND_CANCEL}", bot_username=BOT_USERNAME
-            )
-            return
-        home_score, away_score = result
+    home_score, away_score = parsed
+    home_team = context.user_data["prediction_home_team"]
+    away_team = context.user_data["prediction_away_team"]
+    error = _validate_score_for_pick(
+        pick, home_score, away_score, home_team, away_team
+    )
+    if error:
+        await reply_to_user(
+            update, context, f"{error}\n{msg.SEND_CANCEL}", bot_username=BOT_USERNAME
+        )
+        return
 
     match_id = context.user_data["prediction_match_id"]
     await _finalize_prediction(
@@ -889,7 +898,7 @@ async def my_predictions_command(
         await user_response(update, context, msg.NO_PREDICTIONS)
         return
 
-    lines = [msg.YOUR_PREDICTIONS]
+    lines = [msg.YOUR_PREDICTIONS, msg.SCORING_RULES]
     for prediction, match in predictions:
         line = (
             f"#{match.id} {match.home_team} {msg.VS} {match.away_team}\n"

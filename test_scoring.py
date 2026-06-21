@@ -21,6 +21,11 @@ def test_correct_draw_only():
     assert calculate_points(2, 2, 1, 1) == 0
 
 
+def test_iraq_norway_winner_goals():
+    # Iraq (home) vs Norway (away): predicted Norway 4-0 → 0-4, actual 1-4
+    assert calculate_points(0, 4, 1, 4) == 2
+
+
 def test_wrong_prediction():
     assert calculate_points(2, 0, 0, 2) == 0
     assert calculate_points(1, 0, 1, 1) == 0
