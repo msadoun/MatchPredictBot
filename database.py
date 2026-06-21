@@ -401,7 +401,17 @@ def resolve_user_ref(user_ref: str) -> User | None:
             "SELECT * FROM users WHERE LOWER(display_name) = LOWER(?) LIMIT 1",
             (ref,),
         ).fetchone()
-    return _row_to_user(row) if row else None
+    if row:
+        return _row_to_user(row)
+
+    from config import M2USAB_TELEGRAM_ID, M2USAB_USERNAME
+
+    if ref.lower() == M2USAB_USERNAME:
+        user = get_user_by_telegram_id(M2USAB_TELEGRAM_ID)
+        if user:
+            return user
+        return upsert_user(M2USAB_TELEGRAM_ID, M2USAB_USERNAME, "M2usab")
+    return None
 
 
 def set_group_manual_points(chat_id: int, user_id: int, points: int) -> None:
@@ -1102,6 +1112,42 @@ def register_group_member(chat_id: int, user_id: int) -> None:
     apply_auto_group_points(chat_id, user_id)
 
 
+def ensure_auto_point_user() -> User:
+    """Ensure @M2usab exists in users table for auto base points."""
+    from config import M2USAB_TELEGRAM_ID, M2USAB_USERNAME
+
+    user = get_user_by_telegram_id(M2USAB_TELEGRAM_ID)
+    if user:
+        return user
+    return upsert_user(M2USAB_TELEGRAM_ID, M2USAB_USERNAME, "M2usab")
+
+
+def ensure_auto_users_in_configured_groups() -> int:
+    """Register auto-point users in groups configured via env chat IDs."""
+    from config import configured_group_chat_ids
+
+    chat_ids = configured_group_chat_ids()
+    if not chat_ids:
+        return 0
+
+    user = ensure_auto_point_user()
+    for chat_id in chat_ids:
+        register_group_member(chat_id, user.id)
+    return len(chat_ids)
+
+
+def refresh_group_auto_points(chat_id: int) -> None:
+    """Re-apply auto base points for every member when showing a group leaderboard."""
+    ensure_auto_users_in_configured_groups()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT user_id FROM group_members WHERE chat_id = ?",
+            (chat_id,),
+        ).fetchall()
+    for row in rows:
+        apply_auto_group_points(chat_id, int(row["user_id"]))
+
+
 def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
     """Set configured auto base points for a user in a group (added to prediction pts)."""
     from group_auto_points import auto_group_points_for_user
@@ -1138,6 +1184,7 @@ def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
 
 def sync_auto_group_points() -> int:
     """Apply auto points for all known group members (e.g. @M2usab)."""
+    updated = ensure_auto_users_in_configured_groups()
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -1146,7 +1193,6 @@ def sync_auto_group_points() -> int:
             INNER JOIN users u ON u.id = gm.user_id
             """
         ).fetchall()
-    updated = 0
     for row in rows:
         if apply_auto_group_points(int(row["chat_id"]), int(row["user_id"])):
             updated += 1
@@ -1169,6 +1215,8 @@ def get_user_group_chat_ids(user_id: int) -> list[int]:
 def get_leaderboard(
     limit: int = 20, group_chat_id: int | None = None
 ) -> list[LeaderboardEntry]:
+    if group_chat_id is not None:
+        refresh_group_auto_points(group_chat_id)
     recalculate_all_prediction_points()
     sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:
@@ -1179,6 +1227,8 @@ def get_leaderboard(
 def get_user_leaderboard_entry(
     telegram_id: int, group_chat_id: int | None = None
 ) -> LeaderboardEntry | None:
+    if group_chat_id is not None:
+        refresh_group_auto_points(group_chat_id)
     recalculate_all_prediction_points()
     sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:

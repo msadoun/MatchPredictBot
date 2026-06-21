@@ -27,6 +27,14 @@ M2USAB_TELEGRAM_ID = int(os.getenv("M2USAB_TELEGRAM_ID", "10140530"))
 M2USAB_USERNAME = os.getenv("M2USAB_USERNAME", "M2usab").strip().lstrip("@").lower()
 M2USAB_AUTO_GROUP_POINTS = int(os.getenv("M2USAB_AUTO_GROUP_POINTS", "24"))
 
+
+def configured_group_chat_ids() -> list[int]:
+    ids: list[int] = []
+    for raw in (ALKORAM3NA_GROUP_CHAT_ID, KM3NA_GROUP_CHAT_ID):
+        if raw.lstrip("-").isdigit():
+            ids.append(int(raw))
+    return ids
+
 _DEFAULT_PREDICTION_BACKFILLS = ""
 _raw_backfills = os.getenv("PREDICTION_BACKFILLS")
 if _raw_backfills is None:
