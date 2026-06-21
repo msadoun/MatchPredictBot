@@ -670,6 +670,17 @@ def save_prediction(
                 (user_id, match_id, home_score, away_score, now, now),
             )
             keep_id = cursor.lastrowid
+            if match.home_score is not None and match.away_score is not None:
+                points = calculate_points(
+                    home_score,
+                    away_score,
+                    match.home_score,
+                    match.away_score,
+                )
+                conn.execute(
+                    "UPDATE predictions SET points = ? WHERE id = ?",
+                    (points, keep_id),
+                )
 
         row = conn.execute(
             "SELECT * FROM predictions WHERE id = ?",
@@ -757,6 +768,7 @@ def get_user_group_chat_ids(user_id: int) -> list[int]:
 def get_leaderboard(
     limit: int = 20, group_chat_id: int | None = None
 ) -> list[LeaderboardEntry]:
+    recalculate_all_prediction_points()
     sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:
         rows = conn.execute(f"{sql} LIMIT ?", (*params, limit)).fetchall()
@@ -766,6 +778,7 @@ def get_leaderboard(
 def get_user_leaderboard_entry(
     telegram_id: int, group_chat_id: int | None = None
 ) -> LeaderboardEntry | None:
+    recalculate_all_prediction_points()
     sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:
         rows = conn.execute(sql, params).fetchall()

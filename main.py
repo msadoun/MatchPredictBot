@@ -73,11 +73,11 @@ async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 result["updated"],
                 result["scanned"],
             )
-            recalculated = recalculate_all_prediction_points()
-            if recalculated:
-                logger.info("Recalculated points on %d predictions", recalculated)
     except Exception as exc:
         logger.warning("ESPN results sync failed: %s", exc)
+    recalculated = recalculate_all_prediction_points()
+    if recalculated:
+        logger.info("Recalculated points on %d predictions", recalculated)
 
 
 def main() -> None:

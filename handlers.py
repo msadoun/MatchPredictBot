@@ -794,6 +794,7 @@ async def my_predictions_command(
         return
 
     _track_group_member(update, participant)
+    db.recalculate_all_prediction_points()
     predictions = db.get_user_predictions(participant.id)
     if not predictions:
         await user_response(update, context, msg.NO_PREDICTIONS)
