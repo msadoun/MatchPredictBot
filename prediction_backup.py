@@ -1,5 +1,6 @@
 import json
 import logging
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -21,8 +22,11 @@ def _backup_path(stamp: str | None = None) -> Path:
 def count_predictions() -> int:
     from database import get_db
 
-    with get_db() as conn:
-        return int(conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0])
+    try:
+        with get_db() as conn:
+            return int(conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0])
+    except sqlite3.OperationalError:
+        return 0
 
 
 def export_predictions_payload() -> dict:

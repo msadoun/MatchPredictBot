@@ -24,8 +24,11 @@ def _ensure_dirs() -> None:
 def count_predictions() -> int:
     from database import get_db
 
-    with get_db() as conn:
-        return int(conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0])
+    try:
+        with get_db() as conn:
+            return int(conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0])
+    except sqlite3.OperationalError:
+        return 0
 
 
 def append_prediction_archive(
@@ -246,12 +249,16 @@ def recover_predictions_if_regressed() -> int:
 
 
 def prepare_database_before_init() -> None:
-    """Run before schema init — recover from full DB copy or remote backup if wiped."""
+    """Run before schema init — recover from full DB copy if wiped."""
     _ensure_dirs()
-    if not DATABASE_PATH.is_file():
+    current_count = _count_predictions_in_db(DATABASE_PATH) if DATABASE_PATH.is_file() else 0
+    if not DATABASE_PATH.is_file() or current_count == 0:
         restore_database_from_best_backup()
-    elif count_predictions() == 0:
-        restore_database_from_best_backup()
+
+
+def run_startup_persistence() -> dict[str, int | str | None]:
+    """Backup, detect regression, recover. Never deletes predictions."""
+    from prediction_backup import backup_predictions_if_needed, merge_missing_predictions_from_backup
 
     if count_predictions() == 0:
         try:
@@ -262,11 +269,6 @@ def prepare_database_before_init() -> None:
                 logger.info("Recovered %d predictions from remote backup", fetched)
         except Exception as exc:
             logger.warning("Remote backup fetch skipped: %s", exc)
-
-
-def run_startup_persistence() -> dict[str, int | str | None]:
-    """Backup, detect regression, recover. Never deletes predictions."""
-    from prediction_backup import backup_predictions_if_needed, merge_missing_predictions_from_backup
 
     results: dict[str, int | str | None] = {
         "recovered": 0,
