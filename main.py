@@ -4,7 +4,7 @@ import sys
 from telegram import BotCommand, MenuButtonDefault
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, PREDICTION_BACKFILLS
 from database import (
     backfill_match_kickoff_times,
     count_matches,
@@ -14,6 +14,7 @@ from database import (
     sync_match_open_flags,
 )
 from results_sync import sync_match_results_from_espn
+from prediction_backfills import apply_prediction_backfills
 from handlers import (
     add_match_command,
     close_match_command,
@@ -102,6 +103,10 @@ def main() -> None:
             logger.info("Imported %d finished match results from ESPN", espn["updated"])
     except Exception as exc:
         logger.warning("Initial ESPN results sync failed: %s", exc)
+    if PREDICTION_BACKFILLS.strip():
+        backfilled = apply_prediction_backfills(PREDICTION_BACKFILLS)
+        if backfilled:
+            logger.info("Applied %d missing prediction backfill(s)", backfilled)
     recalculated = recalculate_all_prediction_points()
     if recalculated:
         logger.info("Recalculated points on %d predictions", recalculated)

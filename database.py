@@ -286,6 +286,16 @@ def get_user_by_telegram_id(telegram_id: int) -> User | None:
     return _row_to_user(row) if row else None
 
 
+def get_user_by_username(username: str) -> User | None:
+    handle = username.strip().lstrip("@")
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE LOWER(username) = LOWER(?)",
+            (handle,),
+        ).fetchone()
+    return _row_to_user(row) if row else None
+
+
 def set_user_active_group(user_id: int, chat_id: int) -> None:
     if not chat_id:
         return

@@ -12,3 +12,7 @@ ADMIN_USER_IDS = {
     if uid.strip().isdigit()
 }
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "data/bot.db"))
+PREDICTION_BACKFILLS = os.getenv(
+    "PREDICTION_BACKFILLS",
+    "M2usab:35:3-0,10140530:35:3-0",
+)
