@@ -808,7 +808,9 @@ async def my_predictions_command(
         )
         if match.home_score is not None and match.away_score is not None:
             line += f"\n   {msg.ACTUAL}: {match.home_score}-{match.away_score}"
-            line += f"\n   {msg.POINTS_LABEL}: {prediction.points or 0}"
+            line += f"\n   {msg.POINTS_LABEL}: {prediction.points if prediction.points is not None else 0}"
+        else:
+            line += f"\n   {msg.POINTS_PENDING}"
         lines.append(line)
 
     await user_response(update, context, "\n\n".join(lines))

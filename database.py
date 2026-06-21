@@ -565,6 +565,32 @@ def set_match_result(match_id: int, home_score: int, away_score: int) -> Match |
     return _row_to_match(row) if row else None
 
 
+def recalculate_all_prediction_points() -> int:
+    updated = 0
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.id, p.home_score, p.away_score, m.home_score AS ah, m.away_score AS aa
+            FROM predictions p
+            INNER JOIN matches m ON m.id = p.match_id
+            WHERE m.home_score IS NOT NULL AND m.away_score IS NOT NULL
+            """
+        ).fetchall()
+        for row in rows:
+            points = calculate_points(
+                row["home_score"],
+                row["away_score"],
+                row["ah"],
+                row["aa"],
+            )
+            conn.execute(
+                "UPDATE predictions SET points = ? WHERE id = ?",
+                (points, row["id"]),
+            )
+            updated += 1
+    return updated
+
+
 def save_prediction(
     user_id: int,
     match_id: int,
@@ -594,7 +620,7 @@ def save_prediction(
             conn.execute(
                 """
                 UPDATE predictions
-                SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?
+                SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?, points = NULL
                 WHERE id = ?
                 """,
                 (home_score, away_score, now, keep_id),

@@ -10,8 +10,10 @@ from database import (
     count_matches,
     ensure_world_cup_seeded,
     init_db,
+    recalculate_all_prediction_points,
     sync_match_open_flags,
 )
+from results_sync import sync_match_results_from_espn
 from handlers import (
     add_match_command,
     close_match_command,
@@ -63,6 +65,19 @@ async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     synced = sync_match_open_flags()
     if synced:
         logger.info("Updated open/closed status on %d matches", synced)
+    try:
+        result = sync_match_results_from_espn()
+        if result["updated"]:
+            logger.info(
+                "Synced %d match results from ESPN (scanned %d)",
+                result["updated"],
+                result["scanned"],
+            )
+            recalculated = recalculate_all_prediction_points()
+            if recalculated:
+                logger.info("Recalculated points on %d predictions", recalculated)
+    except Exception as exc:
+        logger.warning("ESPN results sync failed: %s", exc)
 
 
 def main() -> None:
@@ -80,6 +95,15 @@ def main() -> None:
     synced = sync_match_open_flags()
     if synced:
         logger.info("Updated open/closed status on %d matches", synced)
+    try:
+        espn = sync_match_results_from_espn()
+        if espn["updated"]:
+            logger.info("Imported %d finished match results from ESPN", espn["updated"])
+    except Exception as exc:
+        logger.warning("Initial ESPN results sync failed: %s", exc)
+    recalculated = recalculate_all_prediction_points()
+    if recalculated:
+        logger.info("Recalculated points on %d predictions", recalculated)
     logger.info("%d matches open for predictions", count_matches(open_only=True))
 
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()

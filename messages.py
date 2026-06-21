@@ -110,6 +110,7 @@ YOUR_PREDICTIONS = "توقعاتك:\n"
 YOUR_PICK = "توقعك"
 ACTUAL = "النتيجة الفعلية"
 POINTS_LABEL = "النقاط"
+POINTS_PENDING = "⏳ بانتظار النتيجة"
 
 LEADERBOARD_TITLE = "🏆 لوحة متصدرين كأس العالم 2026\n"
 LEADERBOARD_TITLE_GROUP = "🏆 لوحة متصدرين المجموعة\n"
