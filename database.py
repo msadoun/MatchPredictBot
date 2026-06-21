@@ -791,13 +791,20 @@ def set_match_result(match_id: int, home_score: int, away_score: int) -> Match |
 
 def score_all_finished_matches() -> dict[str, int]:
     """Import ESPN results and recalculate points for every user prediction."""
-    from results_sync import restore_missing_override_results, sync_match_results_from_espn
+    from results_sync import (
+        import_results_for_finished_matches,
+        restore_missing_override_results,
+        sync_match_results_from_espn,
+    )
 
+    sync_match_open_flags()
+    imported = import_results_for_finished_matches()
     espn = sync_match_results_from_espn()
     restored = restore_missing_override_results()
     recalculated = recalculate_all_prediction_points()
     return {
-        "results_updated": espn["updated"],
+        "results_updated": espn["updated"] + imported,
+        "results_imported": imported,
         "results_rescored": espn.get("rescored", 0),
         "override_restored": restored,
         "predictions_scored": recalculated,

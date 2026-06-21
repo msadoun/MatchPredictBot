@@ -76,9 +76,6 @@ async def post_init(application: Application) -> None:
 
 
 async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    synced = sync_match_open_flags()
-    if synced:
-        logger.info("Updated open/closed status on %d matches", synced)
     try:
         stats = score_all_finished_matches()
         if stats["results_updated"]:

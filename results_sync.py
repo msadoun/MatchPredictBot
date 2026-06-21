@@ -16,18 +16,45 @@ ESPN_SCOREBOARD_URL = (
 TEAM_ALIASES: dict[str, str] = {
     "United States": "USA",
     "Turkey": "Turkiye",
+    "Türkiye": "Turkiye",
+    "Turkiye": "Turkiye",
     "Curaçao": "Curacao",
     "Korea Republic": "South Korea",
     "Côte d'Ivoire": "Ivory Coast",
     "Cote d'Ivoire": "Ivory Coast",
     "Cabo Verde": "Cape Verde",
     "Congo DR": "DR Congo",
+    "Bosnia-Herzegovina": "Bosnia and Herzegovina",
+    "Bosnia Herzegovina": "Bosnia and Herzegovina",
 }
 
 
 def _english_to_arabic(name: str) -> str:
     canonical = TEAM_ALIASES.get(name, name)
-    return TEAM_EN_TO_AR.get(canonical, name)
+    if canonical in TEAM_EN_TO_AR:
+        return TEAM_EN_TO_AR[canonical]
+
+    normalized = canonical.replace("-", " ").strip().lower()
+    for english, arabic in TEAM_EN_TO_AR.items():
+        english_norm = english.replace("-", " ").strip().lower()
+        if english_norm == normalized:
+            return arabic
+    return TEAM_EN_TO_AR.get(canonical, canonical)
+
+
+def _event_is_finished(event: dict) -> bool:
+    status = event.get("status") or {}
+    type_info = status.get("type") or {}
+    if type_info.get("completed"):
+        return True
+    state = str(type_info.get("state") or "").lower()
+    name = str(type_info.get("name") or type_info.get("description") or "").lower()
+    if state in {"post", "final", "status_final"}:
+        return True
+    if "final" in name or name in {"ft", "full time", "full-time"}:
+        return True
+    detail = str(status.get("detail") or "").lower()
+    return detail in {"ft", "full time", "full-time", "final"}
 
 
 def _fetch_scoreboard(date_yyyymmdd: str) -> list[dict]:
@@ -41,7 +68,7 @@ def _fetch_scoreboard(date_yyyymmdd: str) -> list[dict]:
 
     finished: list[dict] = []
     for event in payload.get("events", []):
-        if not event.get("status", {}).get("type", {}).get("completed"):
+        if not _event_is_finished(event):
             continue
         competition = (event.get("competitions") or [{}])[0]
         competitors = competition.get("competitors") or []
@@ -74,26 +101,45 @@ def _fetch_scoreboard(date_yyyymmdd: str) -> list[dict]:
 
 
 def _find_match_id(home_ar: str, away_ar: str, iso_date: str) -> int | None:
+    from worldcup2026 import match_day_date
+
     with get_db() as conn:
-        row = conn.execute(
+        for date_prefix in {iso_date}:
+            row = conn.execute(
+                """
+                SELECT id FROM matches
+                WHERE home_team = ? AND away_team = ? AND kickoff_at LIKE ?
+                """,
+                (home_ar, away_ar, f"{date_prefix}%"),
+            ).fetchone()
+            if row:
+                return int(row["id"])
+
+        rows = conn.execute(
             """
-            SELECT id FROM matches
-            WHERE home_team = ? AND away_team = ? AND kickoff_at LIKE ?
-            """,
-            (home_ar, away_ar, f"{iso_date}%"),
-        ).fetchone()
-        if row:
-            return int(row["id"])
-        row = conn.execute(
-            """
-            SELECT id FROM matches
+            SELECT id, kickoff_at FROM matches
             WHERE home_team = ? AND away_team = ?
             ORDER BY kickoff_at ASC
-            LIMIT 1
             """,
             (home_ar, away_ar),
-        ).fetchone()
-    return int(row["id"]) if row else None
+        ).fetchall()
+        for row in rows:
+            kickoff = row["kickoff_at"]
+            if not kickoff:
+                continue
+            if match_day_date(kickoff) == iso_date:
+                return int(row["id"])
+        if rows:
+            return int(rows[0]["id"])
+    return None
+
+
+def _date_keys_around(iso_date: str) -> list[str]:
+    day = datetime.strptime(iso_date, "%Y-%m-%d").date()
+    keys: list[str] = []
+    for offset in (-1, 0, 1):
+        keys.append((day + timedelta(days=offset)).strftime("%Y%m%d"))
+    return keys
 
 
 def restore_match_result_from_espn(match_id: int) -> bool:
@@ -105,21 +151,47 @@ def restore_match_result_from_espn(match_id: int) -> bool:
         return False
 
     date_part = match.kickoff_at.split(" · ", 1)[0].strip()[:10]
-    date_key = date_part.replace("-", "")
-    for result in _fetch_scoreboard(date_key):
-        found_id = _find_match_id(result["home_ar"], result["away_ar"], result["date"])
-        if found_id != match_id:
-            continue
-        updated = set_match_result(match_id, result["home_score"], result["away_score"])
-        if updated:
-            logger.info(
-                "Restored ESPN result for match #%d: %d-%d",
-                match_id,
-                result["home_score"],
-                result["away_score"],
-            )
-            return True
+    for date_key in _date_keys_around(date_part):
+        for result in _fetch_scoreboard(date_key):
+            found_id = _find_match_id(result["home_ar"], result["away_ar"], result["date"])
+            if found_id != match_id:
+                continue
+            updated = set_match_result(match_id, result["home_score"], result["away_score"])
+            if updated:
+                logger.info(
+                    "Restored ESPN result for match #%d: %d-%d",
+                    match_id,
+                    result["home_score"],
+                    result["away_score"],
+                )
+                return True
     return False
+
+
+def import_results_for_finished_matches() -> int:
+    """Import ESPN scores for started matches that still have no result."""
+    from worldcup2026 import kickoff_datetime
+
+    now = datetime.utcnow()
+    updated = 0
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id FROM matches
+            WHERE kickoff_at IS NOT NULL
+              AND (home_score IS NULL OR away_score IS NULL)
+            """
+        ).fetchall()
+
+    for row in rows:
+        match = get_match(int(row["id"]))
+        if not match or not match.kickoff_at:
+            continue
+        if kickoff_datetime(match.kickoff_at) > now:
+            continue
+        if restore_match_result_from_espn(int(row["id"])):
+            updated += 1
+    return updated
 
 
 def restore_missing_override_results() -> int:
