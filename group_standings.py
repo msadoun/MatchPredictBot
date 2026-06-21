@@ -21,8 +21,35 @@ ALKORAM3NA_STANDINGS: list[tuple[str, int]] = [
     ("shamlan1998", 1),
 ]
 
-PREDEFINED_GROUP_STANDINGS: dict[str, list[tuple[str, int]]] = {
+# https://t.me/+2TIcPEGwjo8wOTg0 — K m3na groub
+KM3NA_GROUP_USERNAME = "km3na"
+KM3NA_INVITE_SLUG = "2tiecpegwjo8wotg0"
+
+KM3NA_STANDINGS: list[tuple[str, int]] = [
+    ("M2usab", 24),
+    ("waelalamoudi", 19),
+    ("Abdullah7K", 22),
+    ("AbduIIah7k", 22),
+    ("HMAsir0", 4),
+    ("حازم .", 17),
+    ("shamlan1998", 1),
+    ("AHMED", 17),
+]
+
+GROUP_STANDING_ALIASES: dict[str, list[tuple[str, int]]] = {
     ALKORAM3NA_GROUP_USERNAME: ALKORAM3NA_STANDINGS,
     "alkora": ALKORAM3NA_STANDINGS,
     "الكورة_معنا": ALKORAM3NA_STANDINGS,
+    KM3NA_GROUP_USERNAME: KM3NA_STANDINGS,
+    "k_m3na_groub": KM3NA_STANDINGS,
+    "k m3na groub": KM3NA_STANDINGS,
+    "k_m3na": KM3NA_STANDINGS,
+    KM3NA_INVITE_SLUG: KM3NA_STANDINGS,
 }
+
+GROUP_TITLE_HINTS: dict[str, set[str]] = {
+    ALKORAM3NA_GROUP_USERNAME: {"alkoram3na", "الكورة معنا", "alkora"},
+    KM3NA_GROUP_USERNAME: {"k m3na groub", "km3na groub", "k m3na", "km3na"},
+}
+
+PREDEFINED_GROUP_STANDINGS = GROUP_STANDING_ALIASES

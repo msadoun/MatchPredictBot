@@ -196,9 +196,11 @@ ADMIN_PREDICTIONS_FILE_CAPTION = "تقرير توقعات — {label}"
 
 SETGROUPPOINTS_USAGE = (
     "الاستخدام:\n"
-    "• /setgrouppoints load alkoram3na — تحميل نقاط مجموعة الكورة معنا\n"
+    "• /setgrouppoints load alkoram3na — الكورة معنا\n"
+    "• /setgrouppoints load km3na — K m3na groub\n"
     "• /setgrouppoints <مجموعة> <مستخدم> <نقاط>\n"
-    "مثال: /setgrouppoints alkoram3na M2usab 24"
+    "مثال: /setgrouppoints km3na M2usab 24\n"
+    "يمكن تشغيل load من داخل المجموعة مباشرة."
 )
 SETGROUPPOINTS_LOAD_DONE = (
     "تم تعيين نقاط المجموعة «{group}».\n\n"
@@ -208,7 +210,10 @@ SETGROUPPOINTS_LOAD_DONE = (
 SETGROUPPOINTS_APPLIED_ROW = "• {line}"
 SETGROUPPOINTS_MISSING_ROW = "• {ref}"
 SETGROUPPOINTS_ONE_DONE = "تم تعيين {name}: {points} نقطة في المجموعة «{group}»."
-SETGROUPPOINTS_GROUP_NOT_FOUND = "تعذّر العثور على المجموعة. تأكد أن البوت عضو فيها، أو عيّن ALKORAM3NA_GROUP_CHAT_ID."
+SETGROUPPOINTS_GROUP_NOT_FOUND = (
+    "تعذّر العثور على المجموعة. أضف البوت للمجموعة، أو شغّل الأمر من داخلها، "
+    "أو عيّن ALKORAM3NA_GROUP_CHAT_ID / KM3NA_GROUP_CHAT_ID."
+)
 SETGROUPPOINTS_NOTE = "ملاحظة: النقاط اليدوية للوحة المتصدرين فقط — التوقعات الفعلية تبقى محفوظة."
 
 BACKUP_PREDICTIONS_DONE = "تم حفظ نسخة احتياطية: {count} توقع في {filename}"

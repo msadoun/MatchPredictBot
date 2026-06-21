@@ -6,9 +6,15 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 import database as db
-from config import ADMIN_USER_IDS, ALKORAM3NA_GROUP_CHAT_ID
+from config import ADMIN_USER_IDS, ALKORAM3NA_GROUP_CHAT_ID, KM3NA_GROUP_CHAT_ID
 import messages as msg
-from group_standings import ALKORAM3NA_GROUP_USERNAME, PREDEFINED_GROUP_STANDINGS
+from group_standings import (
+    ALKORAM3NA_GROUP_USERNAME,
+    GROUP_TITLE_HINTS,
+    KM3NA_GROUP_USERNAME,
+    KM3NA_INVITE_SLUG,
+    PREDEFINED_GROUP_STANDINGS,
+)
 from user_messaging import edit_or_send_user, is_group_chat, reply_to_user
 
 import prediction_reports as reports
@@ -1640,20 +1646,41 @@ async def admin_predictions_callback(
 async def _resolve_group_chat_id(
     context: ContextTypes.DEFAULT_TYPE,
     group_ref: str,
+    *,
+    update: Update | None = None,
 ) -> int | None:
-    ref = group_ref.strip()
-    if ref.lstrip("-").isdigit():
-        return int(ref)
+    raw = group_ref.strip()
+    if raw.lstrip("-").isdigit():
+        return int(raw)
 
-    if "t.me/" in ref:
-        ref = ref.rsplit("/", 1)[-1].strip()
+    slug = raw
+    if "t.me/" in raw:
+        slug = raw.rsplit("/", 1)[-1].strip().lstrip("+")
 
-    ref = ref.lstrip("@").lower()
-    if ref in {"alkoram3na", "alkora", "الكورة_معنا"} and ALKORAM3NA_GROUP_CHAT_ID.lstrip("-").isdigit():
-        return int(ALKORAM3NA_GROUP_CHAT_ID)
+    key = slug.lstrip("@").lower()
+
+    env_ids = {
+        ALKORAM3NA_GROUP_USERNAME: ALKORAM3NA_GROUP_CHAT_ID,
+        "alkora": ALKORAM3NA_GROUP_CHAT_ID,
+        "الكورة_معنا": ALKORAM3NA_GROUP_CHAT_ID,
+        KM3NA_GROUP_USERNAME: KM3NA_GROUP_CHAT_ID,
+        "k_m3na_groub": KM3NA_GROUP_CHAT_ID,
+        "k m3na groub": KM3NA_GROUP_CHAT_ID,
+        "k_m3na": KM3NA_GROUP_CHAT_ID,
+        KM3NA_INVITE_SLUG: KM3NA_GROUP_CHAT_ID,
+    }
+    configured = env_ids.get(key, "")
+    if configured.lstrip("-").isdigit():
+        return int(configured)
+
+    if update and is_group_chat(update) and update.effective_chat:
+        title = (update.effective_chat.title or "").lower()
+        for canonical, hints in GROUP_TITLE_HINTS.items():
+            if key == canonical or key in hints or any(h in title for h in hints):
+                return update.effective_chat.id
 
     try:
-        chat = await context.bot.get_chat(f"@{ref}")
+        chat = await context.bot.get_chat(f"@{key}")
         return chat.id
     except Exception:
         return None
@@ -1687,7 +1714,7 @@ async def set_group_points_command(
             )
             return
 
-        chat_id = await _resolve_group_chat_id(context, group_key)
+        chat_id = await _resolve_group_chat_id(context, group_key, update=update)
         if chat_id is None:
             await reply_to_user(
                 update,
@@ -1738,7 +1765,7 @@ async def set_group_points_command(
         )
         return
 
-    chat_id = await _resolve_group_chat_id(context, group_ref)
+    chat_id = await _resolve_group_chat_id(context, group_ref, update=update)
     if chat_id is None:
         await reply_to_user(
             update,
