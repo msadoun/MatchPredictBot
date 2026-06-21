@@ -198,11 +198,5 @@ def maybe_auto_restore_predictions() -> int:
 
 
 def _prune_old_backups() -> None:
-    files = list_backup_paths()
-    if len(files) <= MAX_BACKUPS:
-        return
-    best_count = max((_read_backup_count(path) for path in files), default=0)
-    for path in files[MAX_BACKUPS:]:
-        if best_count > 0 and _read_backup_count(path) >= best_count:
-            continue
-        path.unlink(missing_ok=True)
+    """Never delete prediction JSON backups automatically."""
+    return

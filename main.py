@@ -91,6 +91,7 @@ async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.info("Applied %d prediction backfill(s) in sync job", backfilled)
 
     try:
+        from prediction_persistence import backup_database_file, update_highwater_mark
         from prediction_backup import backup_predictions_if_needed
         import time
 
@@ -98,6 +99,8 @@ async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         now = time.time()
         if now - last >= 3600:
             backup_predictions_if_needed()
+            backup_database_file()
+            update_highwater_mark()
             context.application.bot_data["last_prediction_backup"] = now
     except Exception as exc:
         logger.warning("Periodic prediction backup failed: %s", exc)
@@ -109,17 +112,18 @@ def main() -> None:
         sys.exit(1)
 
     init_db()
-    from prediction_backup import (
-        backup_predictions_if_needed,
-        merge_missing_predictions_from_backup,
-    )
+    from prediction_persistence import run_startup_persistence
 
-    merged = merge_missing_predictions_from_backup()
-    if merged:
-        logger.info("Restored %d missing predictions from backup", merged)
-    backup_path = backup_predictions_if_needed()
-    if backup_path:
-        logger.info("Predictions backup saved: %s", backup_path.name)
+    persistence = run_startup_persistence()
+    if persistence["recovered"] or persistence["merged"]:
+        logger.info(
+            "Prediction recovery: restored=%d merged=%d total=%d",
+            persistence["recovered"],
+            persistence["merged"],
+            persistence["count"],
+        )
+    else:
+        logger.info("Predictions in database: %d", persistence["count"])
     auto_points = sync_auto_group_points()
     if auto_points:
         logger.info("Applied auto group points for %d member(s)", auto_points)

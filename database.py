@@ -875,8 +875,13 @@ def save_prediction(
         was_update = bool(rows)
         if rows:
             keep_id = rows[0]["id"]
-            for row in rows[1:]:
-                conn.execute("DELETE FROM predictions WHERE id = ?", (row["id"],))
+            if len(rows) > 1:
+                logger.warning(
+                    "Duplicate predictions for user %s match %s — keeping id %s only",
+                    user_id,
+                    match_id,
+                    keep_id,
+                )
             if match.home_score is not None and match.away_score is not None:
                 points = calculate_points(
                     home_score,
@@ -927,7 +932,29 @@ def save_prediction(
             (keep_id,),
         ).fetchone()
     clear_prediction_draft(user_id)
-    return _row_to_prediction(row), was_update
+    prediction = _row_to_prediction(row)
+    try:
+        with get_db() as conn:
+            user_row = conn.execute(
+                "SELECT telegram_id, username, display_name FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+        if user_row:
+            from prediction_persistence import append_prediction_archive, update_highwater_mark
+
+            append_prediction_archive(
+                telegram_id=int(user_row["telegram_id"]),
+                username=user_row["username"],
+                display_name=user_row["display_name"],
+                match_id=match_id,
+                home_score=home_score,
+                away_score=away_score,
+                points=prediction.points,
+            )
+            update_highwater_mark()
+    except Exception as exc:
+        logger.warning("Prediction archive write failed: %s", exc)
+    return prediction, was_update
 
 
 def link_prediction_to_active_group(user_id: int, chat_id: int | None = None) -> None:

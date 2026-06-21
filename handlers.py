@@ -1843,9 +1843,17 @@ async def restore_predictions_command(
         return
 
     from prediction_backup import best_backup_path, restore_predictions_from_file
+    from prediction_persistence import ARCHIVE_PATH, restore_from_archive, update_highwater_mark
 
+    restored = restore_from_archive()
     path = best_backup_path()
-    if not path:
+    skipped_total = 0
+    if path:
+        merged, skipped_total = restore_predictions_from_file(path, only_if_empty=False)
+        restored += merged
+
+    update_highwater_mark()
+    if restored == 0 and not path and not ARCHIVE_PATH.is_file():
         await reply_to_user(
             update,
             context,
@@ -1854,12 +1862,11 @@ async def restore_predictions_command(
         )
         return
 
-    restored, skipped = restore_predictions_from_file(path, only_if_empty=False)
     db.recalculate_all_prediction_points()
     await reply_to_user(
         update,
         context,
-        msg.RESTORE_PREDICTIONS_DONE.format(restored=restored, skipped=skipped),
+        msg.RESTORE_PREDICTIONS_DONE.format(restored=restored, skipped=skipped_total),
         bot_username=BOT_USERNAME,
     )
 
