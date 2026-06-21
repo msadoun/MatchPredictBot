@@ -55,10 +55,22 @@ GROUP_TITLE_HINTS: dict[str, set[str]] = {
 PREDEFINED_GROUP_STANDINGS = GROUP_STANDING_ALIASES
 
 # Always listed in admin Excel exports (empty cells if no prediction yet).
+# Existing members with predictions are never removed — this list only adds rows.
 EXCEL_ALWAYS_INCLUDE_USERS: list[str] = [
     "waelalamoudi",
     "AbduIIah7k",
     "حازم .",
     "shamlan1998",
     "AHMED",
+    "HMAsir0",
 ]
+
+# Alternate spellings tried when resolving Excel roster usernames.
+EXCEL_USER_ALIASES: dict[str, tuple[str, ...]] = {
+    "AbduIIah7k": ("AbduIIah7k", "Abdullah7K", "AbduIIah7K"),
+    "waelalamoudi": ("waelalamoudi",),
+    "shamlan1998": ("shamlan1998",),
+    "HMAsir0": ("HMAsir0", "HMAsir0"),
+    "AHMED": ("AHMED",),
+    "حازم .": ("حازم .", "حازم"),
+}

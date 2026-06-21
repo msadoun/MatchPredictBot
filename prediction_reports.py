@@ -112,10 +112,21 @@ def scope_label(scope_type: str, scope_key: str) -> str:
     return scope_key
 
 
+def _resolve_excel_roster_user(ref: str):
+    from database import resolve_user_ref
+    from group_standings import EXCEL_USER_ALIASES
+
+    aliases = EXCEL_USER_ALIASES.get(ref, (ref,))
+    for alias in aliases:
+        user = resolve_user_ref(alias)
+        if user:
+            return user
+    return None
+
+
 def _resolve_always_include_users(
     existing_users: list[User],
 ) -> tuple[list[User], frozenset[int], tuple[str, ...]]:
-    from database import resolve_user_ref
     from group_standings import EXCEL_ALWAYS_INCLUDE_USERS
 
     by_id = {user.id: user for user in existing_users}
@@ -123,7 +134,7 @@ def _resolve_always_include_users(
     extra_names: list[str] = []
 
     for ref in EXCEL_ALWAYS_INCLUDE_USERS:
-        user = resolve_user_ref(ref)
+        user = _resolve_excel_roster_user(ref)
         if user:
             always_ids.add(user.id)
             if user.id not in by_id:
