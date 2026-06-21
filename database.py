@@ -444,10 +444,22 @@ def user_scored_prediction_points(user_id: int) -> int:
     return int(row[0] or 0)
 
 
+def get_group_manual_points(chat_id: int, user_id: int) -> int | None:
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT points FROM group_manual_points
+            WHERE chat_id = ? AND user_id = ?
+            """,
+            (chat_id, user_id),
+        ).fetchone()
+    return int(row["points"]) if row else None
+
+
 def set_group_manual_points_for_total(
     chat_id: int, user_id: int, target_total: int
 ) -> None:
-    """Set manual base so target_total = base + existing scored prediction points."""
+    """Set manual base once so target_total = base + existing scored prediction points."""
     base = max(0, target_total - user_scored_prediction_points(user_id))
     set_group_manual_points(chat_id, user_id, base)
 
@@ -1221,12 +1233,11 @@ def ensure_auto_users_in_configured_groups() -> int:
 
 
 def ensure_excel_roster_group_members() -> int:
-    """Register Excel roster users in ROSTER_GROUP_CHAT_ID with K m3na base points."""
+    """Register Excel roster users in ROSTER_GROUP_CHAT_ID (does not reset their points)."""
     from group_standings import (
         EXCEL_ALWAYS_INCLUDE_USERS,
         ROSTER_GROUP_CHAT_ID,
         resolve_roster_user,
-        roster_manual_points,
     )
 
     registered = 0
@@ -1239,9 +1250,6 @@ def ensure_excel_roster_group_members() -> int:
             continue
 
         register_group_member(ROSTER_GROUP_CHAT_ID, user.id)
-        target = roster_manual_points(ref)
-        if target is not None:
-            set_group_manual_points_for_total(ROSTER_GROUP_CHAT_ID, user.id, target)
         registered += 1
 
     if registered:
@@ -1251,6 +1259,38 @@ def ensure_excel_roster_group_members() -> int:
             ROSTER_GROUP_CHAT_ID,
         )
     return registered
+
+
+def apply_roster_group_standings(*, force: bool = False) -> int:
+    """Apply K m3na target totals as base points (only once unless force=True)."""
+    from group_standings import (
+        EXCEL_ALWAYS_INCLUDE_USERS,
+        ROSTER_GROUP_CHAT_ID,
+        resolve_roster_user,
+        roster_manual_points,
+    )
+
+    applied = 0
+    for ref in EXCEL_ALWAYS_INCLUDE_USERS:
+        user = resolve_roster_user(ref)
+        if not user and ref.strip().lstrip("@").lower() == "m2usab":
+            user = ensure_auto_point_user()
+        if not user:
+            continue
+
+        target = roster_manual_points(ref)
+        if target is None:
+            continue
+
+        if not force and get_group_manual_points(ROSTER_GROUP_CHAT_ID, user.id) is not None:
+            continue
+
+        set_group_manual_points_for_total(ROSTER_GROUP_CHAT_ID, user.id, target)
+        applied += 1
+
+    if applied:
+        logger.info("Applied roster standings for %d user(s) in group %s", applied, ROSTER_GROUP_CHAT_ID)
+    return applied
 
 
 def refresh_group_auto_points(chat_id: int) -> None:
@@ -1310,6 +1350,7 @@ def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
 def sync_auto_group_points() -> int:
     """Apply auto points for all known group members (e.g. @M2usab)."""
     updated = ensure_excel_roster_group_members()
+    updated += apply_roster_group_standings(force=False)
     updated += ensure_auto_users_in_configured_groups()
     with get_db() as conn:
         rows = conn.execute(
