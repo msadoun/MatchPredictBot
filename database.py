@@ -572,6 +572,13 @@ def ensure_world_cup_seeded() -> dict[str, int]:
     return {"added": 0, "skipped": count_matches(), "closed": 0}
 
 
+def _row_get(row: sqlite3.Row, key: str, default: object = None) -> object:
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return default
+
+
 def sync_match_open_flags() -> int:
     from worldcup2026 import kickoff_datetime
 
@@ -579,10 +586,13 @@ def sync_match_open_flags() -> int:
     updated = 0
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, kickoff_at, home_score, away_score, is_open FROM matches"
+            """
+            SELECT id, kickoff_at, home_score, away_score, is_open, predictions_override
+            FROM matches
+            """
         ).fetchall()
         for row in rows:
-            if row["predictions_override"]:
+            if bool(_row_get(row, "predictions_override", 0)):
                 continue
             if row["home_score"] is not None and row["away_score"] is not None:
                 should_open = False
@@ -994,11 +1004,6 @@ def _row_to_user(row: sqlite3.Row) -> User:
 
 
 def _row_to_match(row: sqlite3.Row) -> Match:
-    override = 0
-    try:
-        override = row["predictions_override"]
-    except IndexError:
-        pass
     return Match(
         id=row["id"],
         home_team=row["home_team"],
@@ -1007,7 +1012,7 @@ def _row_to_match(row: sqlite3.Row) -> Match:
         home_score=row["home_score"],
         away_score=row["away_score"],
         is_open=bool(row["is_open"]),
-        predictions_override=bool(override),
+        predictions_override=bool(_row_get(row, "predictions_override", 0)),
     )
 
 
