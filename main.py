@@ -11,6 +11,7 @@ from database import (
     ensure_world_cup_seeded,
     init_db,
     score_all_finished_matches,
+    sync_auto_group_points,
     sync_match_open_flags,
 )
 from handlers import (
@@ -119,6 +120,9 @@ def main() -> None:
     backup_path = backup_predictions_if_needed()
     if backup_path:
         logger.info("Predictions backup saved: %s", backup_path.name)
+    auto_points = sync_auto_group_points()
+    if auto_points:
+        logger.info("Applied auto group points for %d member(s)", auto_points)
     seed_result = ensure_world_cup_seeded()
     if seed_result["added"]:
         logger.info("Seeded %d World Cup matches on startup", seed_result["added"])

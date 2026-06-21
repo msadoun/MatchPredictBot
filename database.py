@@ -1066,6 +1066,58 @@ def register_group_member(chat_id: int, user_id: int) -> None:
             """,
             (chat_id, user_id, now),
         )
+    apply_auto_group_points(chat_id, user_id)
+
+
+def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
+    """Set configured auto points for a user in a group (leaderboard only)."""
+    from group_auto_points import auto_group_points_for_user
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT telegram_id, username FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        return False
+
+    points = auto_group_points_for_user(
+        telegram_id=int(row["telegram_id"]),
+        username=row["username"],
+    )
+    if points is None:
+        return False
+
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO group_manual_points (chat_id, user_id, points, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(chat_id, user_id) DO UPDATE SET
+                points = excluded.points,
+                updated_at = excluded.updated_at
+            """,
+            (chat_id, user_id, points, now),
+        )
+    return True
+
+
+def sync_auto_group_points() -> int:
+    """Apply auto points for all known group members (e.g. @M2usab)."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT gm.chat_id, gm.user_id, u.telegram_id, u.username
+            FROM group_members gm
+            INNER JOIN users u ON u.id = gm.user_id
+            """
+        ).fetchall()
+    updated = 0
+    for row in rows:
+        if apply_auto_group_points(int(row["chat_id"]), int(row["user_id"])):
+            updated += 1
+    return updated
 
 
 def get_user_group_chat_ids(user_id: int) -> list[int]:
