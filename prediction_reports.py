@@ -37,6 +37,8 @@ class PredictionReport:
     matches: list[Match]
     users: list[User]
     predictions: dict[tuple[int, int], PredictionCell]
+    always_include_user_ids: frozenset[int] = frozenset()
+    extra_display_names: tuple[str, ...] = ()
 
 
 @dataclass
@@ -110,6 +112,31 @@ def scope_label(scope_type: str, scope_key: str) -> str:
     return scope_key
 
 
+def _resolve_always_include_users(
+    existing_users: list[User],
+) -> tuple[list[User], frozenset[int], tuple[str, ...]]:
+    from database import resolve_user_ref
+    from group_standings import EXCEL_ALWAYS_INCLUDE_USERS
+
+    by_id = {user.id: user for user in existing_users}
+    always_ids: set[int] = set()
+    extra_names: list[str] = []
+
+    for ref in EXCEL_ALWAYS_INCLUDE_USERS:
+        user = resolve_user_ref(ref)
+        if user:
+            always_ids.add(user.id)
+            if user.id not in by_id:
+                by_id[user.id] = user
+            continue
+        label = ref.strip().lstrip("@")
+        if label and label not in extra_names:
+            extra_names.append(label)
+
+    merged = sorted(by_id.values(), key=lambda user: user.display_name.lower())
+    return merged, frozenset(always_ids), tuple(extra_names)
+
+
 def build_prediction_report(scope_type: str, scope_key: str) -> PredictionReport:
     matches = matches_for_scope(scope_type, scope_key)
     match_ids = [m.id for m in matches]
@@ -148,6 +175,10 @@ def build_prediction_report(scope_type: str, scope_key: str) -> PredictionReport
                 points=row["points"],
             )
 
+    users, always_include_user_ids, extra_display_names = _resolve_always_include_users(
+        users
+    )
+
     return PredictionReport(
         scope_type=scope_type,
         scope_key=scope_key,
@@ -155,15 +186,18 @@ def build_prediction_report(scope_type: str, scope_key: str) -> PredictionReport
         matches=matches,
         users=users,
         predictions=predictions,
+        always_include_user_ids=always_include_user_ids,
+        extra_display_names=extra_display_names,
     )
 
 
 def report_summary_text(report: PredictionReport, *, max_users: int = 12) -> str:
     total_preds = len(report.predictions)
+    participant_count = len(report.users) + len(report.extra_display_names)
     lines = [
         f"📊 {report.scope_label}",
         f"• {len(report.matches)} مباراة",
-        f"• {len(report.users)} لاعب",
+        f"• {participant_count} لاعب",
         f"• {total_preds} توقع",
     ]
     if not report.matches:
@@ -174,7 +208,7 @@ def report_summary_text(report: PredictionReport, *, max_users: int = 12) -> str
     shown = 0
     for user in report.users:
         if shown >= max_users:
-            lines.append(f"... و {len(report.users) - max_users} لاعب آخر")
+            lines.append(f"... و {participant_count - max_users} لاعب آخر")
             break
         picks: list[str] = []
         for match in report.matches:
@@ -190,7 +224,14 @@ def report_summary_text(report: PredictionReport, *, max_users: int = 12) -> str
             lines.append(f"• {name}: —")
         shown += 1
 
-    if not report.users:
+    for name in report.extra_display_names:
+        if shown >= max_users:
+            lines.append(f"... و {participant_count - max_users} لاعب آخر")
+            break
+        lines.append(f"• {name}: —")
+        shown += 1
+
+    if participant_count == 0:
         lines.append("لا توجد توقعات بعد في هذا النطاق.")
     return "\n".join(lines)
 
@@ -200,16 +241,37 @@ def _excel_rows(report: PredictionReport) -> list[tuple[str, str, str, str, int 
     for user in report.users:
         for match in report.matches:
             cell = report.predictions.get((user.id, match.id))
-            if not cell:
-                continue
-            points = cell.points if cell.points is not None else 0
+            if cell:
+                points = cell.points if cell.points is not None else 0
+                rows.append(
+                    (
+                        user.display_name,
+                        _score_line(match, cell.home_score, cell.away_score),
+                        _actual_result(match),
+                        _match_round(match),
+                        points,
+                    )
+                )
+            elif user.id in report.always_include_user_ids:
+                rows.append(
+                    (
+                        user.display_name,
+                        "",
+                        _actual_result(match),
+                        _match_round(match),
+                        "",
+                    )
+                )
+
+    for name in report.extra_display_names:
+        for match in report.matches:
             rows.append(
                 (
-                    user.display_name,
-                    _score_line(match, cell.home_score, cell.away_score),
+                    name,
+                    "",
                     _actual_result(match),
                     _match_round(match),
-                    points,
+                    "",
                 )
             )
     return rows
@@ -272,7 +334,7 @@ def save_prediction_export(
                 report.scope_label,
                 str(path),
                 len(report.matches),
-                len(report.users),
+                len(report.users) + len(report.extra_display_names),
                 len(report.predictions),
                 saved_at,
                 saved_by_telegram_id,
@@ -287,7 +349,7 @@ def save_prediction_export(
         scope_label=report.scope_label,
         file_path=str(path),
         match_count=len(report.matches),
-        user_count=len(report.users),
+        user_count=len(report.users) + len(report.extra_display_names),
         prediction_count=len(report.predictions),
         saved_at=saved_at,
     )

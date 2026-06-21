@@ -53,3 +53,12 @@ GROUP_TITLE_HINTS: dict[str, set[str]] = {
 }
 
 PREDEFINED_GROUP_STANDINGS = GROUP_STANDING_ALIASES
+
+# Always listed in admin Excel exports (empty cells if no prediction yet).
+EXCEL_ALWAYS_INCLUDE_USERS: list[str] = [
+    "waelalamoudi",
+    "AbduIIah7k",
+    "حازم .",
+    "shamlan1998",
+    "AHMED",
+]
