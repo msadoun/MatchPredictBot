@@ -89,6 +89,18 @@ async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         if backfilled:
             logger.info("Applied %d prediction backfill(s) in sync job", backfilled)
 
+    try:
+        from prediction_backup import backup_predictions_if_needed
+        import time
+
+        last = context.application.bot_data.get("last_prediction_backup", 0)
+        now = time.time()
+        if now - last >= 3600:
+            backup_predictions_if_needed()
+            context.application.bot_data["last_prediction_backup"] = now
+    except Exception as exc:
+        logger.warning("Periodic prediction backup failed: %s", exc)
+
 
 def main() -> None:
     if not BOT_TOKEN:
@@ -96,11 +108,14 @@ def main() -> None:
         sys.exit(1)
 
     init_db()
-    from prediction_backup import backup_predictions_if_needed, maybe_auto_restore_predictions
+    from prediction_backup import (
+        backup_predictions_if_needed,
+        merge_missing_predictions_from_backup,
+    )
 
-    restored = maybe_auto_restore_predictions()
-    if restored:
-        logger.info("Auto-restored %d predictions from backup", restored)
+    merged = merge_missing_predictions_from_backup()
+    if merged:
+        logger.info("Restored %d missing predictions from backup", merged)
     backup_path = backup_predictions_if_needed()
     if backup_path:
         logger.info("Predictions backup saved: %s", backup_path.name)

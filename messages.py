@@ -214,12 +214,22 @@ SETGROUPPOINTS_GROUP_NOT_FOUND = (
     "تعذّر العثور على المجموعة. أضف البوت للمجموعة، أو شغّل الأمر من داخلها، "
     "أو عيّن ALKORAM3NA_GROUP_CHAT_ID / KM3NA_GROUP_CHAT_ID."
 )
-SETGROUPPOINTS_NOTE = "ملاحظة: النقاط اليدوية للوحة المتصدرين فقط — التوقعات الفعلية تبقى محفوظة."
+SETGROUPPOINTS_NOTE = (
+    "ملاحظة: النقاط اليدوية للوحة المتصدرين فقط — "
+    "التوقعات الفعلية وملفات Excel لا تُحذف ولا تُستبدل."
+)
 
 BACKUP_PREDICTIONS_DONE = "تم حفظ نسخة احتياطية: {count} توقع في {filename}"
-RESTORE_PREDICTIONS_DONE = "تم استرجاع {restored} توقع. تُخطّى {skipped} (موجود مسبقاً)."
+RESTORE_PREDICTIONS_DONE = (
+    "تم استرجاع {restored} توقع مفقود. "
+    "لم يُمس {skipped} توقع موجود مسبقاً — لا يُحذف أو يُستبدل أي توقع."
+)
 RESTORE_PREDICTIONS_EMPTY = "لا توجد نسخة احتياطية للتوقعات."
 RESTORE_PREDICTIONS_USAGE = "الاستخدام: /restorepredictions"
+PREDICTIONS_NEVER_DELETED = (
+    "التوقعات وملفات Excel محفوظة ولا تُحذف تلقائياً. "
+    "النقاط اليدوية للمجموعة لا تمس التوقعات الفعلية."
+)
 
 NO_MATCHES_YET = "لم تُنشأ أي مباريات بعد."
 ALL_MATCHES = "جميع المباريات:\n"

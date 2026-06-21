@@ -1842,9 +1842,9 @@ async def restore_predictions_command(
         )
         return
 
-    from prediction_backup import latest_backup_path, restore_predictions_from_file
+    from prediction_backup import best_backup_path, restore_predictions_from_file
 
-    path = latest_backup_path()
+    path = best_backup_path()
     if not path:
         await reply_to_user(
             update,
@@ -1854,7 +1854,7 @@ async def restore_predictions_command(
         )
         return
 
-    restored, skipped = restore_predictions_from_file(path)
+    restored, skipped = restore_predictions_from_file(path, only_if_empty=False)
     db.recalculate_all_prediction_points()
     await reply_to_user(
         update,

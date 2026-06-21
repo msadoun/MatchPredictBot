@@ -53,6 +53,7 @@ class SavedExport:
 
 
 EXPORTS_DIR = DATABASE_PATH.parent / "exports"
+# Excel exports are append-only: new files only, existing exports are never deleted.
 
 
 def _safe_filename_part(text: str) -> str:

@@ -8,7 +8,7 @@ from config import DATABASE_PATH
 logger = logging.getLogger(__name__)
 
 BACKUPS_DIR = DATABASE_PATH.parent / "backups"
-MAX_BACKUPS = 20
+MAX_BACKUPS = 100
 
 
 def _backup_path(stamp: str | None = None) -> Path:
@@ -67,10 +67,45 @@ def export_predictions_payload() -> dict:
     }
 
 
+def _read_backup_count(path: Path) -> int:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    return int(payload.get("count") or len(payload.get("predictions") or []))
+
+
+def list_backup_paths() -> list[Path]:
+    if not BACKUPS_DIR.is_dir():
+        return []
+    return sorted(BACKUPS_DIR.glob("predictions_*.json"), reverse=True)
+
+
+def latest_backup_path() -> Path | None:
+    files = list_backup_paths()
+    return files[0] if files else None
+
+
+def best_backup_path() -> Path | None:
+    best_path: Path | None = None
+    best_count = -1
+    for path in list_backup_paths():
+        count = _read_backup_count(path)
+        if count > best_count:
+            best_count = count
+            best_path = path
+    return best_path
+
+
 def backup_predictions(*, force: bool = False) -> Path | None:
     count = count_predictions()
-    if count == 0 and not force:
+    if count == 0:
         return None
+
+    best_path = best_backup_path()
+    best_count = _read_backup_count(best_path) if best_path else 0
+    if not force and best_count >= count:
+        return best_path
 
     payload = export_predictions_payload()
     path = _backup_path()
@@ -81,20 +116,22 @@ def backup_predictions(*, force: bool = False) -> Path | None:
 
 
 def backup_predictions_if_needed() -> Path | None:
-    if count_predictions() == 0:
-        return None
     return backup_predictions()
 
 
-def latest_backup_path() -> Path | None:
-    if not BACKUPS_DIR.is_dir():
+def backup_before_migrations() -> Path | None:
+    """Snapshot predictions before schema migrations — never deletes data."""
+    if count_predictions() == 0:
         return None
-    files = sorted(BACKUPS_DIR.glob("predictions_*.json"), reverse=True)
-    return files[0] if files else None
+    return backup_predictions(force=True)
 
 
-def restore_predictions_from_file(path: Path, *, only_if_empty: bool = False) -> tuple[int, int]:
-    """Restore predictions from backup. Returns (restored, skipped)."""
+def restore_predictions_from_file(
+    path: Path,
+    *,
+    only_if_empty: bool = False,
+) -> tuple[int, int]:
+    """Insert missing predictions only — never overwrite or delete existing rows."""
     from database import get_db, get_user_by_telegram_id, save_prediction, upsert_user
 
     if only_if_empty and count_predictions() > 0:
@@ -144,19 +181,28 @@ def restore_predictions_from_file(path: Path, *, only_if_empty: bool = False) ->
     return restored, skipped
 
 
-def maybe_auto_restore_predictions() -> int:
-    if count_predictions() > 0:
-        return 0
-    path = latest_backup_path()
+def merge_missing_predictions_from_backup() -> int:
+    """On startup: fill in any predictions missing from the richest backup."""
+    path = best_backup_path()
     if not path:
         return 0
-    restored, _ = restore_predictions_from_file(path, only_if_empty=True)
+    restored, _ = restore_predictions_from_file(path, only_if_empty=False)
     if restored:
-        logger.info("Auto-restored %d predictions from %s", restored, path.name)
+        logger.info("Merged %d missing predictions from %s", restored, path.name)
     return restored
 
 
+def maybe_auto_restore_predictions() -> int:
+    """Legacy alias — merge missing rows, never replace the whole database."""
+    return merge_missing_predictions_from_backup()
+
+
 def _prune_old_backups() -> None:
-    files = sorted(BACKUPS_DIR.glob("predictions_*.json"), reverse=True)
-    for old in files[MAX_BACKUPS:]:
-        old.unlink(missing_ok=True)
+    files = list_backup_paths()
+    if len(files) <= MAX_BACKUPS:
+        return
+    best_count = max((_read_backup_count(path) for path in files), default=0)
+    for path in files[MAX_BACKUPS:]:
+        if best_count > 0 and _read_backup_count(path) >= best_count:
+            continue
+        path.unlink(missing_ok=True)

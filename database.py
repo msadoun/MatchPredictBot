@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -7,6 +8,8 @@ from typing import Iterator
 
 from config import DATABASE_PATH
 from scoring import calculate_points
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -131,6 +134,13 @@ def get_db() -> Iterator[sqlite3.Connection]:
 
 
 def init_db() -> None:
+    try:
+        from prediction_backup import backup_before_migrations
+
+        backup_before_migrations()
+    except Exception as exc:
+        logger.warning("Pre-migration prediction backup skipped: %s", exc)
+
     with get_db() as conn:
         conn.executescript(
             """
@@ -256,37 +266,17 @@ def _migrate_prediction_exports(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_predictions_global(conn: sqlite3.Connection) -> None:
-    conn.execute("UPDATE predictions SET chat_id = 0 WHERE chat_id != 0")
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()
+    }
+    if "chat_id" in columns:
+        conn.execute("UPDATE predictions SET chat_id = 0 WHERE chat_id != 0")
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_user_match
         ON predictions(user_id, match_id)
         """
     )
-    dupes = conn.execute(
-        """
-        SELECT user_id, match_id
-        FROM predictions
-        GROUP BY user_id, match_id
-        HAVING COUNT(*) > 1
-        """
-    ).fetchall()
-    if not dupes:
-        return
-    for dupe in dupes:
-        rows = conn.execute(
-            """
-            SELECT id FROM predictions
-            WHERE user_id = ? AND match_id = ?
-            ORDER BY
-                CASE WHEN points IS NOT NULL THEN 0 ELSE 1 END,
-                updated_at DESC,
-                id DESC
-            """,
-            (dupe["user_id"], dupe["match_id"]),
-        ).fetchall()
-        for row in rows[1:]:
-            conn.execute("DELETE FROM predictions WHERE id = ?", (row["id"],))
 
 
 def _migrate_users_active_group(conn: sqlite3.Connection) -> None:
@@ -303,34 +293,8 @@ def _migrate_predictions_for_groups(conn: sqlite3.Connection) -> None:
     }
     if "chat_id" in columns:
         return
-
-    conn.executescript(
-        """
-        CREATE TABLE predictions_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            match_id INTEGER NOT NULL,
-            chat_id INTEGER NOT NULL DEFAULT 0,
-            home_score INTEGER NOT NULL,
-            away_score INTEGER NOT NULL,
-            points INTEGER,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            UNIQUE(user_id, match_id, chat_id),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
-        );
-        INSERT INTO predictions_new (
-            user_id, match_id, chat_id, home_score, away_score,
-            points, created_at, updated_at
-        )
-        SELECT
-            user_id, match_id, 0, home_score, away_score,
-            points, created_at, updated_at
-        FROM predictions;
-        DROP TABLE predictions;
-        ALTER TABLE predictions_new RENAME TO predictions;
-        """
+    conn.execute(
+        "ALTER TABLE predictions ADD COLUMN chat_id INTEGER NOT NULL DEFAULT 0"
     )
 
 
@@ -963,14 +927,7 @@ def save_prediction(
             (keep_id,),
         ).fetchone()
     clear_prediction_draft(user_id)
-    prediction = _row_to_prediction(row)
-    try:
-        from prediction_backup import backup_predictions_if_needed
-
-        backup_predictions_if_needed()
-    except Exception:
-        pass
-    return prediction, was_update
+    return _row_to_prediction(row), was_update
 
 
 def link_prediction_to_active_group(user_id: int, chat_id: int | None = None) -> None:
