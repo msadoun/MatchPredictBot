@@ -13,6 +13,9 @@ ADMIN_USER_IDS = {
 }
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "data/bot.db"))
 
+# Optional: Telegram chat ID for https://t.me/alkoram3na (used if @username lookup fails)
+ALKORAM3NA_GROUP_CHAT_ID = os.getenv("ALKORAM3NA_GROUP_CHAT_ID", "").strip()
+
 _DEFAULT_PREDICTION_BACKFILLS = ""
 _raw_backfills = os.getenv("PREDICTION_BACKFILLS")
 if _raw_backfills is None:

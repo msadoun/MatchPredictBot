@@ -1,13 +1,17 @@
 from datetime import datetime
 import re
+from pathlib import Path
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 import database as db
-from config import ADMIN_USER_IDS
+from config import ADMIN_USER_IDS, ALKORAM3NA_GROUP_CHAT_ID
 import messages as msg
+from group_standings import ALKORAM3NA_GROUP_USERNAME, PREDEFINED_GROUP_STANDINGS
 from user_messaging import edit_or_send_user, is_group_chat, reply_to_user
+
+import prediction_reports as reports
 
 
 def is_admin(user_id: int) -> bool:
@@ -17,23 +21,31 @@ def is_admin(user_id: int) -> bool:
 BOT_USERNAME = "FTM3naBot"
 
 
-def main_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
+def main_menu_keyboard(*, show_admin: bool = False) -> InlineKeyboardMarkup:
+    rows = [
         [
+            InlineKeyboardButton(msg.BTN_MATCHES, callback_data="menu:matches"),
+            InlineKeyboardButton(msg.BTN_PREDICT, callback_data="menu:predict"),
+        ],
+        [
+            InlineKeyboardButton(msg.BTN_MY_PREDICTIONS, callback_data="menu:mypredictions"),
+            InlineKeyboardButton(msg.BTN_LEADERBOARD, callback_data="menu:leaderboard"),
+        ],
+        [
+            InlineKeyboardButton(msg.BTN_CANCEL, callback_data="menu:cancel"),
+            InlineKeyboardButton(msg.BTN_HELP, callback_data="menu:help"),
+        ],
+    ]
+    if show_admin:
+        rows.append(
             [
-                InlineKeyboardButton(msg.BTN_MATCHES, callback_data="menu:matches"),
-                InlineKeyboardButton(msg.BTN_PREDICT, callback_data="menu:predict"),
-            ],
-            [
-                InlineKeyboardButton(msg.BTN_MY_PREDICTIONS, callback_data="menu:mypredictions"),
-                InlineKeyboardButton(msg.BTN_LEADERBOARD, callback_data="menu:leaderboard"),
-            ],
-            [
-                InlineKeyboardButton(msg.BTN_CANCEL, callback_data="menu:cancel"),
-                InlineKeyboardButton(msg.BTN_HELP, callback_data="menu:help"),
-            ],
-        ]
-    )
+                InlineKeyboardButton(
+                    msg.BTN_ADMIN_PREDICTIONS,
+                    callback_data="menu:adminpredictions",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
 
 RANK_MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
 
@@ -300,6 +312,8 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await leaderboard_command(update, context)
     elif action == "help":
         await start_command(update, context)
+    elif action == "adminpredictions":
+        await admin_predictions_command(update, context)
 
 
 def format_match(match: db.Match) -> str:
@@ -325,7 +339,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         update,
         context,
         msg.START_TEXT,
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(show_admin=is_admin(user.id)),
         drop_reply_keyboard=True,
     )
 
@@ -1265,6 +1279,479 @@ async def open_match_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         update,
         context,
         msg.MATCH_NOW_OPEN.format(id=match_id, match=format_match(match)),
+        bot_username=BOT_USERNAME,
+    )
+
+
+async def sync_scores_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    stats = db.score_all_finished_matches()
+    await reply_to_user(
+        update,
+        context,
+        msg.SYNCSCORES_DONE.format(
+            results_updated=stats["results_updated"],
+            predictions_scored=stats["predictions_scored"],
+            espn_skipped=stats["espn_skipped"],
+        ),
+        bot_username=BOT_USERNAME,
+    )
+
+
+def _admin_predictions_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BY_DAY, callback_data="adminpred:pick:day")],
+            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BY_STAGE, callback_data="adminpred:pick:stage")],
+            [
+                InlineKeyboardButton(
+                    msg.ADMIN_PREDICTIONS_GROUP_STAGE,
+                    callback_data="adminpred:scope:group_stage:all",
+                )
+            ],
+            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_SAVED, callback_data="adminpred:saved")],
+        ]
+    )
+
+
+def _admin_scope_action_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    msg.ADMIN_PREDICTIONS_BTN_VIEW,
+                    callback_data="adminpred:view",
+                ),
+                InlineKeyboardButton(
+                    msg.ADMIN_PREDICTIONS_BTN_SAVE,
+                    callback_data="adminpred:save",
+                ),
+            ],
+            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")],
+        ]
+    )
+
+
+def _admin_day_picker_keyboard() -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for day in reports.list_available_days():
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    day,
+                    callback_data=f"adminpred:scope:day:{day}",
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _admin_stage_picker_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
+    stages = reports.list_available_stages()
+    context.user_data["adminpred_stages"] = stages
+    rows: list[list[InlineKeyboardButton]] = []
+    for index, stage in enumerate(stages):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    stage,
+                    callback_data=f"adminpred:scope:stage:{index}",
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _store_admin_scope(
+    context: ContextTypes.DEFAULT_TYPE,
+    scope_type: str,
+    scope_key: str,
+) -> None:
+    context.user_data["adminpred_scope"] = {
+        "type": scope_type,
+        "key": scope_key,
+    }
+
+
+def _current_admin_scope(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> tuple[str, str] | None:
+    scope = context.user_data.get("adminpred_scope")
+    if not scope:
+        return None
+    return scope["type"], scope["key"]
+
+
+async def _send_admin_report_document(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    path,
+    caption: str,
+) -> bool:
+    user = update.effective_user
+    if not user:
+        return False
+
+    chat_id = user.id if is_group_chat(update) else update.effective_chat.id
+    with open(path, "rb") as handle:
+        await context.bot.send_document(
+            chat_id=chat_id,
+            document=handle,
+            filename=path.name,
+            caption=caption,
+        )
+    return True
+
+
+async def admin_predictions_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    await reply_to_user(
+        update,
+        context,
+        msg.ADMIN_PREDICTIONS_MENU,
+        reply_markup=_admin_predictions_menu_keyboard(),
+        bot_username=BOT_USERNAME,
+    )
+
+
+async def admin_predictions_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await query.answer(msg.ADMIN_ONLY, show_alert=True)
+        return
+
+    await query.answer()
+    parts = query.data.split(":")
+    if len(parts) < 2 or parts[0] != "adminpred":
+        return
+
+    action = parts[1]
+
+    if action == "menu":
+        await edit_or_send_user(
+            update,
+            context,
+            msg.ADMIN_PREDICTIONS_MENU,
+            reply_markup=_admin_predictions_menu_keyboard(),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    if action == "pick" and len(parts) >= 3:
+        pick_type = parts[2]
+        if pick_type == "day":
+            await edit_or_send_user(
+                update,
+                context,
+                msg.ADMIN_PREDICTIONS_PICK_DAY,
+                reply_markup=_admin_day_picker_keyboard(),
+                bot_username=BOT_USERNAME,
+            )
+        elif pick_type == "stage":
+            await edit_or_send_user(
+                update,
+                context,
+                msg.ADMIN_PREDICTIONS_PICK_STAGE,
+                reply_markup=_admin_stage_picker_keyboard(context),
+                bot_username=BOT_USERNAME,
+            )
+        return
+
+    if action == "scope" and len(parts) >= 4:
+        scope_type = parts[2]
+        scope_key = parts[3]
+        if scope_type == "stage" and scope_key.isdigit():
+            stages = context.user_data.get("adminpred_stages") or reports.list_available_stages()
+            index = int(scope_key)
+            if 0 <= index < len(stages):
+                scope_key = stages[index]
+        _store_admin_scope(context, scope_type, scope_key)
+        report = reports.build_prediction_report(scope_type, scope_key)
+        summary = reports.report_summary_text(report, max_users=8)
+        await edit_or_send_user(
+            update,
+            context,
+            msg.ADMIN_PREDICTIONS_SCOPE_HEADER.format(summary=summary),
+            reply_markup=_admin_scope_action_keyboard(),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    if action == "view":
+        current = _current_admin_scope(context)
+        if not current:
+            return
+        scope_type, scope_key = current
+        report = reports.build_prediction_report(scope_type, scope_key)
+        text = reports.report_summary_text(report, max_users=20)
+        if len(text) > 3900:
+            text = text[:3900] + "\n…"
+        await edit_or_send_user(
+            update,
+            context,
+            text,
+            reply_markup=_admin_scope_action_keyboard(),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    if action == "save":
+        current = _current_admin_scope(context)
+        if not current:
+            return
+        scope_type, scope_key = current
+        report = reports.build_prediction_report(scope_type, scope_key)
+        path, saved = reports.save_prediction_export(
+            report,
+            saved_by_telegram_id=user.id,
+        )
+        summary = reports.report_summary_text(report, max_users=5)
+        await edit_or_send_user(
+            update,
+            context,
+            msg.ADMIN_PREDICTIONS_EXPORT_DONE.format(
+                summary=summary,
+                filename=path.name,
+            ),
+            reply_markup=_admin_scope_action_keyboard(),
+            bot_username=BOT_USERNAME,
+        )
+        await _send_admin_report_document(
+            update,
+            context,
+            path,
+            msg.ADMIN_PREDICTIONS_FILE_CAPTION.format(label=report.scope_label),
+        )
+        return
+
+    if action == "saved":
+        exports = reports.list_saved_exports()
+        if not exports:
+            await edit_or_send_user(
+                update,
+                context,
+                msg.ADMIN_PREDICTIONS_SAVED_EMPTY,
+                reply_markup=_admin_predictions_menu_keyboard(),
+                bot_username=BOT_USERNAME,
+            )
+            return
+
+        lines = [msg.ADMIN_PREDICTIONS_SAVED_LIST]
+        rows: list[list[InlineKeyboardButton]] = []
+        for export in exports[:15]:
+            saved_at = export.saved_at.replace("T", " ")[:16]
+            lines.append(
+                msg.ADMIN_PREDICTIONS_SAVED_ROW.format(
+                    id=export.id,
+                    label=export.scope_label,
+                    users=export.user_count,
+                    predictions=export.prediction_count,
+                    saved_at=saved_at,
+                )
+            )
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"📥 #{export.id} {export.scope_label}",
+                        callback_data=f"adminpred:dl:{export.id}",
+                    )
+                ]
+            )
+        rows.append(
+            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")]
+        )
+        await edit_or_send_user(
+            update,
+            context,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(rows),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    if action == "dl" and len(parts) >= 3:
+        try:
+            export_id = int(parts[2])
+        except ValueError:
+            return
+        export = reports.get_saved_export(export_id)
+        if not export:
+            return
+        path = Path(export.file_path)
+        if not path.is_file():
+            await edit_or_send_user(
+                update,
+                context,
+                "الملف غير موجود على الخادم.",
+                reply_markup=_admin_predictions_menu_keyboard(),
+                bot_username=BOT_USERNAME,
+            )
+            return
+        await _send_admin_report_document(
+            update,
+            context,
+            path,
+            msg.ADMIN_PREDICTIONS_FILE_CAPTION.format(label=export.scope_label),
+        )
+        return
+
+
+async def _resolve_group_chat_id(
+    context: ContextTypes.DEFAULT_TYPE,
+    group_ref: str,
+) -> int | None:
+    ref = group_ref.strip()
+    if ref.lstrip("-").isdigit():
+        return int(ref)
+
+    if "t.me/" in ref:
+        ref = ref.rsplit("/", 1)[-1].strip()
+
+    ref = ref.lstrip("@").lower()
+    if ref in {"alkoram3na", "alkora", "الكورة_معنا"} and ALKORAM3NA_GROUP_CHAT_ID.lstrip("-").isdigit():
+        return int(ALKORAM3NA_GROUP_CHAT_ID)
+
+    try:
+        chat = await context.bot.get_chat(f"@{ref}")
+        return chat.id
+    except Exception:
+        return None
+
+
+async def set_group_points_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if not context.args:
+        await reply_to_user(
+            update, context, msg.SETGROUPPOINTS_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+
+    if context.args[0].lower() == "load":
+        group_key = context.args[1].lower() if len(context.args) > 1 else ALKORAM3NA_GROUP_USERNAME
+        standings = PREDEFINED_GROUP_STANDINGS.get(group_key)
+        if not standings:
+            await reply_to_user(
+                update,
+                context,
+                msg.SETGROUPPOINTS_USAGE,
+                bot_username=BOT_USERNAME,
+            )
+            return
+
+        chat_id = await _resolve_group_chat_id(context, group_key)
+        if chat_id is None:
+            await reply_to_user(
+                update,
+                context,
+                msg.SETGROUPPOINTS_GROUP_NOT_FOUND,
+                bot_username=BOT_USERNAME,
+            )
+            return
+
+        applied, not_found = db.bulk_set_group_manual_points(chat_id, standings)
+        lines = [
+            msg.SETGROUPPOINTS_LOAD_DONE.format(
+                group=group_key,
+                applied_count=len(applied),
+                missing_count=len(not_found),
+            )
+        ]
+        if applied:
+            lines.append("\n✅:")
+            lines.extend(msg.SETGROUPPOINTS_APPLIED_ROW.format(line=line) for line in applied)
+        if not_found:
+            lines.append("\n❌ لم يُعثر عليهم (يجب /start أولاً):")
+            lines.extend(
+                msg.SETGROUPPOINTS_MISSING_ROW.format(ref=ref) for ref in not_found
+            )
+        await reply_to_user(
+            update,
+            context,
+            "\n".join(lines),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    if len(context.args) < 3:
+        await reply_to_user(
+            update, context, msg.SETGROUPPOINTS_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+
+    group_ref = context.args[0]
+    user_ref = context.args[1]
+    try:
+        points = int(context.args[2])
+    except ValueError:
+        await reply_to_user(
+            update, context, msg.SCORES_MUST_BE_NUMBERS, bot_username=BOT_USERNAME
+        )
+        return
+
+    chat_id = await _resolve_group_chat_id(context, group_ref)
+    if chat_id is None:
+        await reply_to_user(
+            update,
+            context,
+            msg.SETGROUPPOINTS_GROUP_NOT_FOUND,
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    target = db.resolve_user_ref(user_ref)
+    if not target:
+        await reply_to_user(
+            update, context, msg.USER_NOT_FOUND, bot_username=BOT_USERNAME
+        )
+        return
+
+    db.set_group_manual_points(chat_id, target.id, points)
+    group_label = group_ref.lstrip("@")
+    name = target.display_name
+    if target.username:
+        name += f" (@{target.username})"
+    await reply_to_user(
+        update,
+        context,
+        msg.SETGROUPPOINTS_ONE_DONE.format(
+            name=name,
+            points=points,
+            group=group_label,
+        ),
         bot_username=BOT_USERNAME,
     )
 

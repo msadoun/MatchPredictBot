@@ -159,6 +159,54 @@ SETPREDICTION_USAGE = (
 PREDICTION_SET = "تم تعيين التوقع — {home} {vs} {away}: {score} ({points} نقطة)"
 USER_NOT_FOUND = "المستخدم غير موجود."
 
+SYNCSCORES_DONE = (
+    "تم تحديث النقاط لجميع المستخدمين.\n"
+    "• نتائج جديدة من ESPN: {results_updated}\n"
+    "• توقعات أُعيد حسابها: {predictions_scored}\n"
+    "• مباريات بدون تطابق ESPN: {espn_skipped}"
+)
+
+BTN_ADMIN_PREDICTIONS = "📋 تقارير التوقعات"
+ADMIN_PREDICTIONS_MENU = (
+    "📋 تقارير التوقعات (للمسؤول)\n\n"
+    "اختر كيف تريد عرض أو حفظ توقعات اللاعبين:"
+)
+ADMIN_PREDICTIONS_BY_DAY = "📅 حسب اليوم"
+ADMIN_PREDICTIONS_BY_STAGE = "🏆 حسب المرحلة/المجموعة"
+ADMIN_PREDICTIONS_GROUP_STAGE = "⚽ دور المجموعات (كامل)"
+ADMIN_PREDICTIONS_SAVED = "💾 التقارير المحفوظة"
+ADMIN_PREDICTIONS_PICK_DAY = "اختر يوم المباريات:"
+ADMIN_PREDICTIONS_PICK_STAGE = "اختر المرحلة أو المجموعة:"
+ADMIN_PREDICTIONS_SCOPE_HEADER = "{summary}\n\nاختر إجراء:"
+ADMIN_PREDICTIONS_BTN_VIEW = "👁 عرض في المحادثة"
+ADMIN_PREDICTIONS_BTN_SAVE = "💾 حفظ وإرسال ملف Excel"
+ADMIN_PREDICTIONS_BTN_BACK = "↩️ رجوع"
+ADMIN_PREDICTIONS_SAVED_EMPTY = "لا توجد تقارير محفوظة بعد."
+ADMIN_PREDICTIONS_SAVED_LIST = "💾 التقارير المحفوظة:\n"
+ADMIN_PREDICTIONS_SAVED_ROW = "#{id} · {label} · {users} لاعب · {predictions} توقع · {saved_at}"
+ADMIN_PREDICTIONS_EXPORT_DONE = (
+    "✅ تم حفظ التقرير.\n\n"
+    "{summary}\n\n"
+    "📁 الملف: {filename}"
+)
+ADMIN_PREDICTIONS_FILE_CAPTION = "تقرير توقعات — {label}"
+
+SETGROUPPOINTS_USAGE = (
+    "الاستخدام:\n"
+    "• /setgrouppoints load alkoram3na — تحميل نقاط مجموعة الكورة معنا\n"
+    "• /setgrouppoints <مجموعة> <مستخدم> <نقاط>\n"
+    "مثال: /setgrouppoints alkoram3na M2usab 24"
+)
+SETGROUPPOINTS_LOAD_DONE = (
+    "تم تعيين نقاط المجموعة «{group}».\n\n"
+    "✅ تم: {applied_count}\n"
+    "❌ غير موجود: {missing_count}"
+)
+SETGROUPPOINTS_APPLIED_ROW = "• {line}"
+SETGROUPPOINTS_MISSING_ROW = "• {ref}"
+SETGROUPPOINTS_ONE_DONE = "تم تعيين {name}: {points} نقطة في المجموعة «{group}»."
+SETGROUPPOINTS_GROUP_NOT_FOUND = "تعذّر العثور على المجموعة. تأكد أن البوت عضو فيها، أو عيّن ALKORAM3NA_GROUP_CHAT_ID."
+
 NO_MATCHES_YET = "لم تُنشأ أي مباريات بعد."
 ALL_MATCHES = "جميع المباريات:\n"
 

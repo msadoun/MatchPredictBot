@@ -54,12 +54,30 @@ class LeaderboardEntry:
 def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object]]:
     params: list[object] = []
     if group_chat_id is not None:
-        member_filter = "INNER JOIN group_members gm ON gm.user_id = u.id AND gm.chat_id = ?"
         params.append(group_chat_id)
-    else:
-        member_filter = ""
+        params.append(group_chat_id)
+        sql = """
+        SELECT
+            u.id,
+            u.telegram_id,
+            u.display_name,
+            u.username,
+            COALESCE(MAX(gmp.points), COALESCE(SUM(p.points), 0)) AS total_points,
+            COUNT(p.id) AS predictions_count,
+            COALESCE(SUM(CASE WHEN p.points = 3 THEN 1 ELSE 0 END), 0) AS exact_hits,
+            COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
+            COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
+        FROM users u
+        INNER JOIN group_members gm ON gm.user_id = u.id AND gm.chat_id = ?
+        LEFT JOIN group_manual_points gmp ON gmp.user_id = u.id AND gmp.chat_id = ?
+        LEFT JOIN predictions p ON p.user_id = u.id
+        GROUP BY u.id
+        HAVING COALESCE(MAX(gmp.points), COALESCE(SUM(p.points), 0)) > 0
+        ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
+        """
+        return sql, params
 
-    sql = f"""
+    sql = """
         SELECT
             u.id,
             u.telegram_id,
@@ -71,7 +89,6 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
             COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
             COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
         FROM users u
-        {member_filter}
         INNER JOIN predictions p ON p.user_id = u.id
         GROUP BY u.id
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
@@ -165,6 +182,8 @@ def init_db() -> None:
         _migrate_predictions_global(conn)
         _migrate_prediction_drafts(conn)
         _migrate_predictions_override(conn)
+        _migrate_prediction_exports(conn)
+        _migrate_group_manual_points(conn)
 
 
 @dataclass
@@ -200,6 +219,40 @@ def _migrate_predictions_override(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE matches ADD COLUMN predictions_override INTEGER NOT NULL DEFAULT 0"
         )
+
+
+def _migrate_group_manual_points(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS group_manual_points (
+            chat_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            points INTEGER NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (chat_id, user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+
+def _migrate_prediction_exports(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prediction_exports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scope_type TEXT NOT NULL,
+            scope_key TEXT NOT NULL,
+            scope_label TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            match_count INTEGER NOT NULL,
+            user_count INTEGER NOT NULL,
+            prediction_count INTEGER NOT NULL,
+            saved_at TEXT NOT NULL,
+            saved_by_telegram_id INTEGER
+        )
+        """
+    )
 
 
 def _migrate_predictions_global(conn: sqlite3.Connection) -> None:
@@ -373,10 +426,46 @@ def resolve_user_ref(user_ref: str) -> User | None:
         return user
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM users WHERE LOWER(display_name) LIKE LOWER(?) LIMIT 1",
-            (f"%{ref}%",),
+            "SELECT * FROM users WHERE LOWER(display_name) = LOWER(?) LIMIT 1",
+            (ref,),
         ).fetchone()
     return _row_to_user(row) if row else None
+
+
+def set_group_manual_points(chat_id: int, user_id: int, points: int) -> None:
+    register_group_member(chat_id, user_id)
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO group_manual_points (chat_id, user_id, points, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(chat_id, user_id) DO UPDATE SET
+                points = excluded.points,
+                updated_at = excluded.updated_at
+            """,
+            (chat_id, user_id, points, now),
+        )
+
+
+def bulk_set_group_manual_points(
+    chat_id: int,
+    standings: list[tuple[str, int]],
+) -> tuple[list[str], list[str]]:
+    """Apply manual points. Returns (applied lines, not_found refs)."""
+    applied: list[str] = []
+    not_found: list[str] = []
+    for user_ref, points in standings:
+        user = resolve_user_ref(user_ref)
+        if not user:
+            not_found.append(user_ref)
+            continue
+        set_group_manual_points(chat_id, user.id, points)
+        label = user.display_name
+        if user.username:
+            label += f" (@{user.username})"
+        applied.append(f"{label}: {points}")
+    return applied, not_found
 
 
 def list_matches(
@@ -717,6 +806,48 @@ def set_match_result(match_id: int, home_score: int, away_score: int) -> Match |
     return _row_to_match(row) if row else None
 
 
+def score_all_finished_matches() -> dict[str, int]:
+    """Import ESPN results and recalculate points for every user prediction."""
+    from results_sync import restore_missing_override_results, sync_match_results_from_espn
+
+    espn = sync_match_results_from_espn()
+    restored = restore_missing_override_results()
+    recalculated = recalculate_all_prediction_points()
+    return {
+        "results_updated": espn["updated"],
+        "results_rescored": espn.get("rescored", 0),
+        "override_restored": restored,
+        "predictions_scored": recalculated,
+        "espn_skipped": espn["skipped"],
+    }
+
+
+def rescore_match_predictions(match_id: int) -> int:
+    """Recalculate points for every prediction on a finished match."""
+    match = get_match(match_id)
+    if not match or match.home_score is None or match.away_score is None:
+        return 0
+    updated = 0
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, home_score, away_score FROM predictions WHERE match_id = ?",
+            (match_id,),
+        ).fetchall()
+        for row in rows:
+            points = calculate_points(
+                row["home_score"],
+                row["away_score"],
+                match.home_score,
+                match.away_score,
+            )
+            conn.execute(
+                "UPDATE predictions SET points = ? WHERE id = ?",
+                (points, row["id"]),
+            )
+            updated += 1
+    return updated
+
+
 def recalculate_all_prediction_points() -> int:
     updated = 0
     with get_db() as conn:
@@ -992,11 +1123,19 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
         return int(
             conn.execute(
                 """
-                SELECT COUNT(DISTINCT p.user_id)
-                FROM predictions p
-                INNER JOIN group_members gm ON gm.user_id = p.user_id AND gm.chat_id = ?
+                SELECT COUNT(*)
+                FROM (
+                    SELECT u.id
+                    FROM users u
+                    INNER JOIN group_members gm ON gm.user_id = u.id AND gm.chat_id = ?
+                    LEFT JOIN group_manual_points gmp
+                        ON gmp.user_id = u.id AND gmp.chat_id = ?
+                    LEFT JOIN predictions p ON p.user_id = u.id
+                    GROUP BY u.id
+                    HAVING COALESCE(MAX(gmp.points), 0) > 0 OR COUNT(p.id) > 0
+                )
                 """,
-                (group_chat_id,),
+                (group_chat_id, group_chat_id),
             ).fetchone()[0]
         )
 

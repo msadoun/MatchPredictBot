@@ -10,13 +10,13 @@ from database import (
     count_matches,
     ensure_world_cup_seeded,
     init_db,
-    recalculate_all_prediction_points,
+    score_all_finished_matches,
     sync_match_open_flags,
 )
-from results_sync import restore_missing_override_results, sync_match_results_from_espn
-from prediction_backfills import apply_prediction_backfills
 from handlers import (
     add_match_command,
+    admin_predictions_callback,
+    admin_predictions_command,
     close_match_command,
     open_match_command,
     group_welcome,
@@ -32,8 +32,10 @@ from handlers import (
     predict_cancel_command,
     predict_command,
     predict_score_message,
+    set_group_points_command,
     set_prediction_command,
     set_result_command,
+    sync_scores_command,
     stale_keyboard_handler,
     start_command,
 )
@@ -69,25 +71,21 @@ async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     if synced:
         logger.info("Updated open/closed status on %d matches", synced)
     try:
-        result = sync_match_results_from_espn()
-        if result["updated"]:
-            logger.info(
-                "Synced %d match results from ESPN (scanned %d)",
-                result["updated"],
-                result["scanned"],
-            )
+        stats = score_all_finished_matches()
+        if stats["results_updated"]:
+            logger.info("Synced %d new match results from ESPN", stats["results_updated"])
+        if stats["predictions_scored"]:
+            logger.info("Scored %d predictions", stats["predictions_scored"])
+        if stats["espn_skipped"]:
+            logger.info("ESPN skipped %d unmatched results", stats["espn_skipped"])
     except Exception as exc:
-        logger.warning("ESPN results sync failed: %s", exc)
-    restored = restore_missing_override_results()
-    if restored:
-        logger.info("Restored ESPN results on %d admin-reopened matches", restored)
+        logger.warning("Score sync failed: %s", exc)
     if PREDICTION_BACKFILLS.strip():
+        from prediction_backfills import apply_prediction_backfills
+
         backfilled = apply_prediction_backfills(PREDICTION_BACKFILLS)
         if backfilled:
             logger.info("Applied %d prediction backfill(s) in sync job", backfilled)
-    recalculated = recalculate_all_prediction_points()
-    if recalculated:
-        logger.info("Recalculated points on %d predictions", recalculated)
 
 
 def main() -> None:
@@ -106,21 +104,19 @@ def main() -> None:
     if synced:
         logger.info("Updated open/closed status on %d matches", synced)
     try:
-        espn = sync_match_results_from_espn()
-        if espn["updated"]:
-            logger.info("Imported %d finished match results from ESPN", espn["updated"])
+        stats = score_all_finished_matches()
+        if stats["results_updated"]:
+            logger.info("Imported %d finished match results from ESPN", stats["results_updated"])
+        if stats["predictions_scored"]:
+            logger.info("Scored %d predictions on startup", stats["predictions_scored"])
     except Exception as exc:
-        logger.warning("Initial ESPN results sync failed: %s", exc)
-    restored = restore_missing_override_results()
-    if restored:
-        logger.info("Restored ESPN results on %d admin-reopened matches", restored)
+        logger.warning("Initial score sync failed: %s", exc)
     if PREDICTION_BACKFILLS.strip():
+        from prediction_backfills import apply_prediction_backfills
+
         backfilled = apply_prediction_backfills(PREDICTION_BACKFILLS)
         if backfilled:
             logger.info("Applied %d missing prediction backfill(s)", backfilled)
-    recalculated = recalculate_all_prediction_points()
-    if recalculated:
-        logger.info("Recalculated points on %d predictions", recalculated)
     logger.info("%d matches open for predictions", count_matches(open_only=True))
 
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
@@ -140,9 +136,13 @@ def main() -> None:
     app.add_handler(CommandHandler("allmatches", list_all_matches_command))
     app.add_handler(CommandHandler("closematch", close_match_command))
     app.add_handler(CommandHandler("openmatch", open_match_command))
+    app.add_handler(CommandHandler("setgrouppoints", set_group_points_command))
+    app.add_handler(CommandHandler("syncscores", sync_scores_command))
+    app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu:"))
     app.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^lb:"))
+    app.add_handler(CallbackQueryHandler(admin_predictions_callback, pattern=r"^adminpred:"))
     app.add_handler(CallbackQueryHandler(predict_callback, pattern=r"^pred:"))
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, stale_keyboard_handler),

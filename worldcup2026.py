@@ -194,3 +194,46 @@ def _knockout_stage() -> list[WorldCupFixture]:
 
 
 WORLD_CUP_2026_FIXTURES: list[WorldCupFixture] = _group_stage() + _knockout_stage()
+
+GROUP_STAGE_LABEL = "دور المجموعات"
+
+KNOCKOUT_STAGES: tuple[str, ...] = (
+    "دور الـ32",
+    "دور الـ16",
+    "ربع النهائي",
+    "نصف النهائي",
+    "مباراة المركز الثالث",
+    "النهائي",
+)
+
+
+def stage_from_kickoff(kickoff_at: str | None) -> str | None:
+    if not kickoff_at or " · " not in kickoff_at:
+        return None
+    return kickoff_at.split(" · ", 1)[1].strip()
+
+
+def is_group_stage_label(stage: str) -> bool:
+    return stage.startswith("المجموعة ")
+
+
+def ordered_report_stages() -> list[str]:
+    """Stages for admin reports: all groups in fixture order, then knockout rounds."""
+    seen: set[str] = set()
+    stages: list[str] = []
+    for fixture in WORLD_CUP_2026_FIXTURES:
+        if fixture.group not in seen:
+            seen.add(fixture.group)
+            stages.append(fixture.group)
+    return stages
+
+
+def ordered_match_days() -> list[str]:
+    seen: set[str] = set()
+    days: list[str] = []
+    for fixture in WORLD_CUP_2026_FIXTURES:
+        day = fixture.date
+        if day not in seen:
+            seen.add(day)
+            days.append(day)
+    return days

@@ -82,6 +82,17 @@ def _find_match_id(home_ar: str, away_ar: str, iso_date: str) -> int | None:
             """,
             (home_ar, away_ar, f"{iso_date}%"),
         ).fetchone()
+        if row:
+            return int(row["id"])
+        row = conn.execute(
+            """
+            SELECT id FROM matches
+            WHERE home_team = ? AND away_team = ?
+            ORDER BY kickoff_at ASC
+            LIMIT 1
+            """,
+            (home_ar, away_ar),
+        ).fetchone()
     return int(row["id"]) if row else None
 
 
@@ -128,11 +139,12 @@ def restore_missing_override_results() -> int:
     return restored
 
 
-def sync_match_results_from_espn(days_back: int = 14, days_ahead: int = 1) -> dict[str, int]:
+def sync_match_results_from_espn(days_back: int = 60, days_ahead: int = 1) -> dict[str, int]:
     today = datetime.utcnow().date()
     updated = 0
     scanned = 0
     skipped = 0
+    rescored = 0
 
     for offset in range(-days_back, days_ahead + 1):
         day = today + timedelta(days=offset)
@@ -142,14 +154,36 @@ def sync_match_results_from_espn(days_back: int = 14, days_ahead: int = 1) -> di
             match_id = _find_match_id(result["home_ar"], result["away_ar"], result["date"])
             if not match_id:
                 skipped += 1
+                logger.warning(
+                    "ESPN result not matched: %s vs %s on %s (%d-%d)",
+                    result["home_ar"],
+                    result["away_ar"],
+                    result["date"],
+                    result["home_score"],
+                    result["away_score"],
+                )
                 continue
             match = get_match(match_id)
             if match and match.predictions_override:
                 if match.home_score is not None and match.away_score is not None:
                     skipped += 1
                     continue
+            if (
+                match
+                and match.home_score == result["home_score"]
+                and match.away_score == result["away_score"]
+            ):
+                from database import rescore_match_predictions
+
+                rescored += rescore_match_predictions(match_id)
+                continue
             match = set_match_result(match_id, result["home_score"], result["away_score"])
             if match:
                 updated += 1
 
-    return {"updated": updated, "scanned": scanned, "skipped": skipped}
+    return {
+        "updated": updated,
+        "scanned": scanned,
+        "skipped": skipped,
+        "rescored": rescored,
+    }
