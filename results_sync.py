@@ -4,7 +4,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 
-from database import get_db, set_match_result
+from database import get_db, get_match, set_match_result
 from teams_ar import TEAM_EN_TO_AR
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,10 @@ def sync_match_results_from_espn(days_back: int = 14, days_ahead: int = 1) -> di
             scanned += 1
             match_id = _find_match_id(result["home_ar"], result["away_ar"], result["date"])
             if not match_id:
+                skipped += 1
+                continue
+            match = get_match(match_id)
+            if match and match.predictions_override:
                 skipped += 1
                 continue
             match = set_match_result(match_id, result["home_score"], result["away_score"])

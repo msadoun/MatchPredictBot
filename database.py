@@ -26,6 +26,7 @@ class Match:
     home_score: int | None
     away_score: int | None
     is_open: bool
+    predictions_override: bool = False
 
 
 @dataclass
@@ -163,6 +164,7 @@ def init_db() -> None:
         _migrate_users_active_group(conn)
         _migrate_predictions_global(conn)
         _migrate_prediction_drafts(conn)
+        _migrate_predictions_override(conn)
 
 
 @dataclass
@@ -188,6 +190,16 @@ def _migrate_prediction_drafts(conn: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def _migrate_predictions_override(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(matches)").fetchall()
+    }
+    if "predictions_override" not in columns:
+        conn.execute(
+            "ALTER TABLE matches ADD COLUMN predictions_override INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def _migrate_predictions_global(conn: sqlite3.Connection) -> None:
@@ -428,6 +440,8 @@ def match_has_started(match: Match, *, now: datetime | None = None) -> bool:
 def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
     if match.home_score is not None and match.away_score is not None:
         return False
+    if match.predictions_override:
+        return True
     if match_has_started(match, now=now):
         return False
     if not match.is_open:
@@ -568,6 +582,8 @@ def sync_match_open_flags() -> int:
             "SELECT id, kickoff_at, home_score, away_score, is_open FROM matches"
         ).fetchall()
         for row in rows:
+            if row["predictions_override"]:
+                continue
             if row["home_score"] is not None and row["away_score"] is not None:
                 should_open = False
             elif not row["kickoff_at"]:
@@ -620,7 +636,44 @@ def migrate_team_names_to_arabic() -> dict[str, int]:
 
 def close_match(match_id: int) -> None:
     with get_db() as conn:
-        conn.execute("UPDATE matches SET is_open = 0 WHERE id = ?", (match_id,))
+        conn.execute(
+            "UPDATE matches SET is_open = 0, predictions_override = 0 WHERE id = ?",
+            (match_id,),
+        )
+
+
+def open_match(match_id: int, *, clear_result: bool = False) -> Match | None:
+    match = get_match(match_id)
+    if not match:
+        return None
+    if match.home_score is not None and match.away_score is not None and not clear_result:
+        return None
+    with get_db() as conn:
+        if clear_result:
+            conn.execute(
+                """
+                UPDATE matches
+                SET is_open = 1, predictions_override = 1,
+                    home_score = NULL, away_score = NULL
+                WHERE id = ?
+                """,
+                (match_id,),
+            )
+            conn.execute(
+                "UPDATE predictions SET points = NULL WHERE match_id = ?",
+                (match_id,),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE matches
+                SET is_open = 1, predictions_override = 1
+                WHERE id = ?
+                """,
+                (match_id,),
+            )
+        row = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+    return _row_to_match(row) if row else None
 
 
 def set_match_result(match_id: int, home_score: int, away_score: int) -> Match | None:
@@ -941,6 +994,11 @@ def _row_to_user(row: sqlite3.Row) -> User:
 
 
 def _row_to_match(row: sqlite3.Row) -> Match:
+    override = 0
+    try:
+        override = row["predictions_override"]
+    except IndexError:
+        pass
     return Match(
         id=row["id"],
         home_team=row["home_team"],
@@ -949,6 +1007,7 @@ def _row_to_match(row: sqlite3.Row) -> Match:
         home_score=row["home_score"],
         away_score=row["away_score"],
         is_open=bool(row["is_open"]),
+        predictions_override=bool(override),
     )
 
 

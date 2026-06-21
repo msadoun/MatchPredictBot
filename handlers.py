@@ -1178,6 +1178,73 @@ async def close_match_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
+async def open_match_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if len(context.args) < 1:
+        await reply_to_user(
+            update, context, msg.OPENMATCH_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+
+    try:
+        match_id = int(context.args[0])
+    except ValueError:
+        await reply_to_user(
+            update, context, msg.MATCH_ID_NOT_NUMBER, bot_username=BOT_USERNAME
+        )
+        return
+
+    clear_result = len(context.args) >= 2 and context.args[1].lower() == "clear"
+    existing = db.get_match(match_id)
+    if not existing:
+        await reply_to_user(
+            update,
+            context,
+            msg.MATCH_NOT_FOUND.format(id=match_id),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    if (
+        existing.home_score is not None
+        and existing.away_score is not None
+        and not clear_result
+    ):
+        await reply_to_user(
+            update,
+            context,
+            msg.MATCH_HAS_RESULT.format(
+                id=match_id,
+                score=f"{existing.home_score}-{existing.away_score}",
+            ),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    match = db.open_match(match_id, clear_result=clear_result)
+    if not match:
+        await reply_to_user(
+            update,
+            context,
+            msg.MATCH_NOT_FOUND.format(id=match_id),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    await reply_to_user(
+        update,
+        context,
+        msg.MATCH_NOW_OPEN.format(id=match_id, match=format_match(match)),
+        bot_username=BOT_USERNAME,
+    )
+
+
 async def load_worldcup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not user or not is_admin(user.id):

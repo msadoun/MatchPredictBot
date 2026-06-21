@@ -157,6 +157,16 @@ ALL_MATCHES = "جميع المباريات:\n"
 
 CLOSEMATCH_USAGE = "الاستخدام: /closematch <رقم_المباراة>"
 MATCH_NOW_CLOSED = "المباراة #{id} مغلقة الآن للتوقعات."
+OPENMATCH_USAGE = (
+    "الاستخدام: /openmatch <رقم_المباراة> [clear]\n"
+    "مثال: /openmatch 36\n"
+    "مثال: /openmatch 36 clear — إعادة فتح مباراة منتهية (يمسح النتيجة)"
+)
+MATCH_NOW_OPEN = "المباراة #{id} مفتوحة الآن للتوقعات.\n\n{match}"
+MATCH_HAS_RESULT = (
+    "المباراة #{id} لها نتيجة ({score}).\n"
+    "لإعادة فتحها استخدم: /openmatch {id} clear"
+)
 
 WORLDCUP_LOADED = (
     "تم تحميل مباريات كأس العالم 2026.\n\n"

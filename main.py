@@ -18,6 +18,7 @@ from prediction_backfills import apply_prediction_backfills
 from handlers import (
     add_match_command,
     close_match_command,
+    open_match_command,
     group_welcome,
     help_command,
     leaderboard_command,
@@ -132,6 +133,7 @@ def main() -> None:
     app.add_handler(CommandHandler("setprediction", set_prediction_command))
     app.add_handler(CommandHandler("allmatches", list_all_matches_command))
     app.add_handler(CommandHandler("closematch", close_match_command))
+    app.add_handler(CommandHandler("openmatch", open_match_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu:"))
     app.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^lb:"))
