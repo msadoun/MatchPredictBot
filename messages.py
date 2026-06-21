@@ -233,6 +233,27 @@ RESTORE_PREDICTIONS_USAGE = (
     "الاستخدام: /restorepredictions\n"
     "أو أرسل /restorepredictions مع ملف JSON أو ردّ على رسالة النسخة الاحتياطية."
 )
+
+IMPORT_EXCEL_DONE = (
+    "تم استيراد البيانات من Excel (دمج فقط — لم يُحذف أي توقع).\n"
+    "• توقعات مضافة: {merged}\n"
+    "• نقاط محدّثة: {points_updated}\n"
+    "• موجود مسبقاً (لم يُمس): {skipped}\n"
+    "• نقاط مجموعة أساسية: {group_points}\n"
+    "• ملفات: {files}"
+)
+IMPORT_EXCEL_USERS_MISSING = "لم يُعثر على: {users}"
+IMPORT_EXCEL_MATCHES_MISSING = "مباريات غير مطابقة: {matches}"
+IMPORT_EXCEL_EMPTY = (
+    "لا توجد ملفات Excel في data/imports أو data/exports.\n"
+    "أرسل ملف .xlsx مع /importexcel أو ردّ على رسالة الملف."
+)
+IMPORT_EXCEL_FILE_FAILED = "تعذّر قراءة ملف Excel."
+IMPORT_EXCEL_USAGE = (
+    "الاستخدام: /importexcel\n"
+    "أو أرسل /importexcel مع ملف Excel (.xlsx) أو ردّ على رسالة التقرير.\n"
+    "يُدمج التوقعات والنقاط — لا يحذف أي بيانات موجودة."
+)
 PREDICTIONS_NEVER_DELETED = (
     "التوقعات وملفات Excel محفوظة. "
     "النقاط اليدوية للمجموعة تُضاف فوق نقاط التوقعات."

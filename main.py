@@ -35,6 +35,7 @@ from handlers import (
     predict_command,
     predict_score_message,
     restore_predictions_command,
+    import_excel_command,
     set_group_points_command,
     set_prediction_command,
     set_result_command,
@@ -142,6 +143,24 @@ def main() -> None:
             "DATA WILL BE LOST ON EVERY DEPLOY — add Railway volume at /app/data "
             "or REMOTE_PREDICTION_BACKUP_URL"
         )
+
+    try:
+        from excel_import import apply_predefined_group_standings, import_if_database_empty
+
+        excel_restore = import_if_database_empty()
+        if excel_restore:
+            logger.info(
+                "Excel restore on startup: merged=%d group_pts=%d",
+                excel_restore.merged,
+                excel_restore.group_points_applied,
+            )
+        else:
+            applied, missing = apply_predefined_group_standings()
+            if applied:
+                logger.info("Restored group base points for %d member(s)", applied)
+    except Exception as exc:
+        logger.warning("Excel/group restore skipped: %s", exc)
+
     auto_points = sync_auto_group_points()
     if auto_points:
         logger.info("Applied auto group points for %d member(s)", auto_points)
@@ -190,6 +209,7 @@ def main() -> None:
     app.add_handler(CommandHandler("setgrouppoints", set_group_points_command))
     app.add_handler(CommandHandler("backuppredictions", backup_predictions_command))
     app.add_handler(CommandHandler("restorepredictions", restore_predictions_command))
+    app.add_handler(CommandHandler("importexcel", import_excel_command))
     app.add_handler(CommandHandler("syncscores", sync_scores_command))
     app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))

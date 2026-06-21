@@ -864,6 +864,56 @@ def recalculate_all_prediction_points() -> int:
     return updated
 
 
+def merge_prediction_if_missing(
+    user_id: int,
+    match_id: int,
+    home_score: int,
+    away_score: int,
+    *,
+    points: int | None = None,
+) -> str:
+    """Insert missing prediction only — never overwrite an existing pick."""
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT id, points FROM predictions
+            WHERE user_id = ? AND match_id = ?
+            LIMIT 1
+            """,
+            (user_id, match_id),
+        ).fetchone()
+        if row:
+            if points is not None and row["points"] is None:
+                conn.execute(
+                    "UPDATE predictions SET points = ? WHERE id = ?",
+                    (points, row["id"]),
+                )
+                return "points_updated"
+            return "skipped"
+
+    try:
+        save_prediction(
+            user_id,
+            match_id,
+            home_score,
+            away_score,
+            allow_closed=True,
+        )
+    except ValueError:
+        return "skipped"
+
+    if points is not None:
+        with get_db() as conn:
+            conn.execute(
+                """
+                UPDATE predictions SET points = ?
+                WHERE user_id = ? AND match_id = ?
+                """,
+                (points, user_id, match_id),
+            )
+    return "merged"
+
+
 def save_prediction(
     user_id: int,
     match_id: int,

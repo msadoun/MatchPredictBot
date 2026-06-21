@@ -1904,6 +1904,99 @@ async def restore_predictions_command(
     )
 
 
+async def import_excel_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    import tempfile
+
+    from excel_import import (
+        IMPORTS_DIR,
+        import_all_excel_sources,
+        import_predictions_from_excel,
+    )
+
+    message = update.effective_message
+    reply_doc = message.reply_to_message.document if message and message.reply_to_message else None
+    attached_doc = message.document if message else None
+    doc = reply_doc or attached_doc
+
+    if doc:
+        if not (doc.file_name or "").lower().endswith(".xlsx"):
+            await reply_to_user(
+                update,
+                context,
+                msg.IMPORT_EXCEL_USAGE,
+                bot_username=BOT_USERNAME,
+            )
+            return
+        try:
+            IMPORTS_DIR.mkdir(parents=True, exist_ok=True)
+            tg_file = await context.bot.get_file(doc.file_id)
+            dest = IMPORTS_DIR / (doc.file_name or "import.xlsx")
+            await tg_file.download_to_drive(custom_path=str(dest))
+            result = import_predictions_from_excel(dest)
+            from excel_import import apply_predefined_group_standings
+
+            applied, missing = apply_predefined_group_standings()
+            result.group_points_applied = applied
+            result.group_points_missing = missing
+            db.recalculate_all_prediction_points()
+        except Exception:
+            await reply_to_user(
+                update,
+                context,
+                msg.IMPORT_EXCEL_FILE_FAILED,
+                bot_username=BOT_USERNAME,
+            )
+            return
+    else:
+        result = import_all_excel_sources()
+        if not result.files_read:
+            await reply_to_user(
+                update,
+                context,
+                msg.IMPORT_EXCEL_EMPTY,
+                bot_username=BOT_USERNAME,
+            )
+            return
+
+    lines = [
+        msg.IMPORT_EXCEL_DONE.format(
+            merged=result.merged,
+            points_updated=result.points_updated,
+            skipped=result.skipped,
+            group_points=result.group_points_applied,
+            files=", ".join(result.files_read) or "—",
+        )
+    ]
+    if result.users_not_found:
+        lines.append(
+            msg.IMPORT_EXCEL_USERS_MISSING.format(
+                users=", ".join(result.users_not_found[:10])
+            )
+        )
+    if result.matches_not_found:
+        lines.append(
+            msg.IMPORT_EXCEL_MATCHES_MISSING.format(
+                matches=", ".join(result.matches_not_found[:5])
+            )
+        )
+
+    await reply_to_user(
+        update,
+        context,
+        "\n".join(lines),
+        bot_username=BOT_USERNAME,
+    )
+
+
 async def load_worldcup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not user or not is_admin(user.id):
