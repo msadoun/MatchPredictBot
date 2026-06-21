@@ -512,6 +512,21 @@ async def _finalize_prediction(
         )
         return False
 
+    if not db.get_user_prediction(participant.id, match_id):
+        await reply_to_user(
+            update,
+            context,
+            msg.PREDICTION_SAVE_FAILED,
+            bot_username=BOT_USERNAME,
+        )
+        return False
+
+    lb_group = context.user_data.get("leaderboard_group_chat_id")
+    if lb_group:
+        db.link_prediction_to_active_group(participant.id, int(lb_group))
+    else:
+        db.link_prediction_to_active_group(participant.id)
+
     _clear_prediction_state(context, participant.id)
     if home_score == away_score:
         outcome = msg.DRAW
@@ -929,7 +944,7 @@ async def my_predictions_command(
     if not user:
         return
 
-    participant = db.get_user_by_telegram_id(user.id)
+    participant = _ensure_participant(update)
     if not participant:
         await reply_to_user(
             update, context, msg.NOT_JOINED, bot_username=BOT_USERNAME

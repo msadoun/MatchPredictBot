@@ -72,7 +72,7 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
         LEFT JOIN group_manual_points gmp ON gmp.user_id = u.id AND gmp.chat_id = ?
         LEFT JOIN predictions p ON p.user_id = u.id
         GROUP BY u.id
-        HAVING COALESCE(MAX(gmp.points), COALESCE(SUM(p.points), 0)) > 0
+        HAVING COALESCE(MAX(gmp.points), COALESCE(SUM(p.points), 0)) > 0 OR COUNT(p.id) > 0
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
         """
         return sql, params
@@ -963,7 +963,21 @@ def save_prediction(
             (keep_id,),
         ).fetchone()
     clear_prediction_draft(user_id)
-    return _row_to_prediction(row), was_update
+    prediction = _row_to_prediction(row)
+    try:
+        from prediction_backup import backup_predictions_if_needed
+
+        backup_predictions_if_needed()
+    except Exception:
+        pass
+    return prediction, was_update
+
+
+def link_prediction_to_active_group(user_id: int, chat_id: int | None = None) -> None:
+    """Register the user in their active group so predictions show on group leaderboard."""
+    group_chat_id = chat_id or get_user_active_group(user_id)
+    if group_chat_id:
+        register_group_member(group_chat_id, user_id)
 
 
 def save_prediction_draft(
@@ -1039,11 +1053,12 @@ def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
                 p.away_score AS p_away, p.points, p.created_at AS p_created,
                 p.updated_at,
                 m.id AS m_id, m.home_team, m.away_team, m.kickoff_at,
-                m.home_score AS m_home, m.away_score AS m_away, m.is_open, m.created_at AS m_created
+                m.home_score AS m_home, m.away_score AS m_away, m.is_open,
+                m.predictions_override, m.created_at AS m_created
             FROM predictions p
-            JOIN matches m ON m.id = p.match_id
+            LEFT JOIN matches m ON m.id = p.match_id
             WHERE p.user_id = ?
-            ORDER BY m.kickoff_at ASC, m.id ASC
+            ORDER BY COALESCE(m.kickoff_at, p.updated_at) ASC, p.match_id ASC
             """,
             (user_id,),
         ).fetchall()
@@ -1058,15 +1073,27 @@ def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
             away_score=row["p_away"],
             points=row["points"],
         )
-        match = Match(
-            id=row["m_id"],
-            home_team=row["home_team"],
-            away_team=row["away_team"],
-            kickoff_at=row["kickoff_at"],
-            home_score=row["m_home"],
-            away_score=row["m_away"],
-            is_open=bool(row["is_open"]),
-        )
+        if row["m_id"] is not None:
+            match = Match(
+                id=row["m_id"],
+                home_team=row["home_team"],
+                away_team=row["away_team"],
+                kickoff_at=row["kickoff_at"],
+                home_score=row["m_home"],
+                away_score=row["m_away"],
+                is_open=bool(row["is_open"]),
+                predictions_override=bool(row["predictions_override"] or 0),
+            )
+        else:
+            match = Match(
+                id=row["match_id"],
+                home_team="?",
+                away_team="?",
+                kickoff_at=None,
+                home_score=None,
+                away_score=None,
+                is_open=False,
+            )
         results.append((prediction, match))
     return results
 

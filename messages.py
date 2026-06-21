@@ -118,6 +118,9 @@ PREDICTION_CANCELLED = "تم إلغاء التوقع."
 
 NOT_JOINED = "لم تسجّل بعد. استخدم /start أولاً."
 NO_PREDICTIONS = "لم تقم بأي توقعات بعد."
+PREDICTION_SAVE_FAILED = (
+    "تعذّر حفظ التوقع. تأكد أن البوت يعمل على قاعدة بيانات دائمة، ثم حاول مرة أخرى."
+)
 YOUR_PREDICTIONS = "توقعاتك:\n"
 YOUR_PICK = "توقعك"
 ACTUAL = "النتيجة الفعلية"
