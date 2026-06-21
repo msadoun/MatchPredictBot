@@ -438,10 +438,10 @@ def match_has_started(match: Match, *, now: datetime | None = None) -> bool:
 
 
 def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
-    if match.home_score is not None and match.away_score is not None:
-        return False
     if match.predictions_override:
         return True
+    if match.home_score is not None and match.away_score is not None:
+        return False
     if match_has_started(match, now=now):
         return False
     if not match.is_open:
@@ -653,10 +653,10 @@ def close_match(match_id: int) -> None:
 
 
 def open_match(match_id: int, *, clear_result: bool = False) -> Match | None:
+    from results_sync import restore_match_result_from_espn
+
     match = get_match(match_id)
     if not match:
-        return None
-    if match.home_score is not None and match.away_score is not None and not clear_result:
         return None
     with get_db() as conn:
         if clear_result:
@@ -682,19 +682,23 @@ def open_match(match_id: int, *, clear_result: bool = False) -> Match | None:
                 """,
                 (match_id,),
             )
-        row = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
-    return _row_to_match(row) if row else None
+
+    restore_match_result_from_espn(match_id)
+    recalculate_all_prediction_points()
+    return get_match(match_id)
 
 
 def set_match_result(match_id: int, home_score: int, away_score: int) -> Match | None:
+    existing = get_match(match_id)
+    keep_open = bool(existing and existing.predictions_override)
     with get_db() as conn:
         conn.execute(
             """
             UPDATE matches
-            SET home_score = ?, away_score = ?, is_open = 0
+            SET home_score = ?, away_score = ?, is_open = ?
             WHERE id = ?
             """,
-            (home_score, away_score, match_id),
+            (home_score, away_score, int(keep_open), match_id),
         )
         predictions = conn.execute(
             "SELECT id, home_score, away_score FROM predictions WHERE match_id = ?",

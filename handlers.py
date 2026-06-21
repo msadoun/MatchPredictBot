@@ -1211,22 +1211,6 @@ async def open_match_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    if (
-        existing.home_score is not None
-        and existing.away_score is not None
-        and not clear_result
-    ):
-        await reply_to_user(
-            update,
-            context,
-            msg.MATCH_HAS_RESULT.format(
-                id=match_id,
-                score=f"{existing.home_score}-{existing.away_score}",
-            ),
-            bot_username=BOT_USERNAME,
-        )
-        return
-
     match = db.open_match(match_id, clear_result=clear_result)
     if not match:
         await reply_to_user(

@@ -159,8 +159,8 @@ CLOSEMATCH_USAGE = "الاستخدام: /closematch <رقم_المباراة>"
 MATCH_NOW_CLOSED = "المباراة #{id} مغلقة الآن للتوقعات."
 OPENMATCH_USAGE = (
     "الاستخدام: /openmatch <رقم_المباراة> [clear]\n"
-    "مثال: /openmatch 36\n"
-    "مثال: /openmatch 36 clear — إعادة فتح مباراة منتهية (يمسح النتيجة)"
+    "مثال: /openmatch 36 — إعادة فتح مباراة منتهية للتوقعات\n"
+    "مثال: /openmatch 36 clear — مسح النتيجة ثم استيرادها من ESPN"
 )
 MATCH_NOW_OPEN = "المباراة #{id} مفتوحة الآن للتوقعات.\n\n{match}"
 MATCH_HAS_RESULT = (

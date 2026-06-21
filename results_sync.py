@@ -85,6 +85,49 @@ def _find_match_id(home_ar: str, away_ar: str, iso_date: str) -> int | None:
     return int(row["id"]) if row else None
 
 
+def restore_match_result_from_espn(match_id: int) -> bool:
+    """Import a finished score for one match (used after admin reopen)."""
+    match = get_match(match_id)
+    if not match or not match.kickoff_at:
+        return False
+    if match.home_score is not None and match.away_score is not None:
+        return False
+
+    date_part = match.kickoff_at.split(" · ", 1)[0].strip()[:10]
+    date_key = date_part.replace("-", "")
+    for result in _fetch_scoreboard(date_key):
+        found_id = _find_match_id(result["home_ar"], result["away_ar"], result["date"])
+        if found_id != match_id:
+            continue
+        updated = set_match_result(match_id, result["home_score"], result["away_score"])
+        if updated:
+            logger.info(
+                "Restored ESPN result for match #%d: %d-%d",
+                match_id,
+                result["home_score"],
+                result["away_score"],
+            )
+            return True
+    return False
+
+
+def restore_missing_override_results() -> int:
+    """Re-import ESPN results for admin-reopened matches missing scores."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id FROM matches
+            WHERE predictions_override = 1
+              AND (home_score IS NULL OR away_score IS NULL)
+            """
+        ).fetchall()
+    restored = 0
+    for row in rows:
+        if restore_match_result_from_espn(int(row["id"])):
+            restored += 1
+    return restored
+
+
 def sync_match_results_from_espn(days_back: int = 14, days_ahead: int = 1) -> dict[str, int]:
     today = datetime.utcnow().date()
     updated = 0
@@ -102,8 +145,9 @@ def sync_match_results_from_espn(days_back: int = 14, days_ahead: int = 1) -> di
                 continue
             match = get_match(match_id)
             if match and match.predictions_override:
-                skipped += 1
-                continue
+                if match.home_score is not None and match.away_score is not None:
+                    skipped += 1
+                    continue
             match = set_match_result(match_id, result["home_score"], result["away_score"])
             if match:
                 updated += 1

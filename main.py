@@ -13,7 +13,7 @@ from database import (
     recalculate_all_prediction_points,
     sync_match_open_flags,
 )
-from results_sync import sync_match_results_from_espn
+from results_sync import restore_missing_override_results, sync_match_results_from_espn
 from prediction_backfills import apply_prediction_backfills
 from handlers import (
     add_match_command,
@@ -78,6 +78,9 @@ async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             )
     except Exception as exc:
         logger.warning("ESPN results sync failed: %s", exc)
+    restored = restore_missing_override_results()
+    if restored:
+        logger.info("Restored ESPN results on %d admin-reopened matches", restored)
     if PREDICTION_BACKFILLS.strip():
         backfilled = apply_prediction_backfills(PREDICTION_BACKFILLS)
         if backfilled:
@@ -108,6 +111,9 @@ def main() -> None:
             logger.info("Imported %d finished match results from ESPN", espn["updated"])
     except Exception as exc:
         logger.warning("Initial ESPN results sync failed: %s", exc)
+    restored = restore_missing_override_results()
+    if restored:
+        logger.info("Restored ESPN results on %d admin-reopened matches", restored)
     if PREDICTION_BACKFILLS.strip():
         backfilled = apply_prediction_backfills(PREDICTION_BACKFILLS)
         if backfilled:
