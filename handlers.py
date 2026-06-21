@@ -1842,18 +1842,51 @@ async def restore_predictions_command(
         )
         return
 
+    import tempfile
+
     from prediction_backup import best_backup_path, restore_predictions_from_file
     from prediction_persistence import ARCHIVE_PATH, restore_from_archive, update_highwater_mark
 
-    restored = restore_from_archive()
-    path = best_backup_path()
+    restored = 0
     skipped_total = 0
-    if path:
-        merged, skipped_total = restore_predictions_from_file(path, only_if_empty=False)
-        restored += merged
+    upload_path: Path | None = None
+
+    message = update.effective_message
+    reply_doc = message.reply_to_message.document if message and message.reply_to_message else None
+    attached_doc = message.document if message else None
+    doc = reply_doc or attached_doc
+
+    if doc:
+        try:
+            tg_file = await context.bot.get_file(doc.file_id)
+            suffix = Path(doc.file_name or "backup.json").suffix or ".json"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
+                upload_path = Path(handle.name)
+            await tg_file.download_to_drive(custom_path=str(upload_path))
+            merged, skipped_total = restore_predictions_from_file(
+                upload_path, only_if_empty=False
+            )
+            restored += merged
+        except Exception:
+            await reply_to_user(
+                update,
+                context,
+                msg.RESTORE_PREDICTIONS_FILE_FAILED,
+                bot_username=BOT_USERNAME,
+            )
+            return
+        finally:
+            if upload_path:
+                upload_path.unlink(missing_ok=True)
+    else:
+        restored = restore_from_archive()
+        path = best_backup_path()
+        if path:
+            merged, skipped_total = restore_predictions_from_file(path, only_if_empty=False)
+            restored += merged
 
     update_highwater_mark()
-    if restored == 0 and not path and not ARCHIVE_PATH.is_file():
+    if restored == 0 and not doc and not best_backup_path() and not ARCHIVE_PATH.is_file():
         await reply_to_user(
             update,
             context,

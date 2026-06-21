@@ -1,0 +1,13 @@
+# Railway deployment — see README.md for full setup.
+#
+# CRITICAL: In Railway dashboard → Service → Volumes → Add Volume
+#   Mount path: /app/data
+# Without this, every deploy deletes all predictions.
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "python main.py"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

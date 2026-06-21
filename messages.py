@@ -224,8 +224,15 @@ RESTORE_PREDICTIONS_DONE = (
     "تم استرجاع {restored} توقع مفقود. "
     "لم يُمس {skipped} توقع موجود مسبقاً — لا يُحذف أو يُستبدل أي توقع."
 )
-RESTORE_PREDICTIONS_EMPTY = "لا توجد نسخة احتياطية للتوقعات."
-RESTORE_PREDICTIONS_USAGE = "الاستخدام: /restorepredictions"
+RESTORE_PREDICTIONS_EMPTY = (
+    "لا توجد نسخة احتياطية محلية. "
+    "أرسل ملف predictions_*.json مع الأمر أو من رسالة النسخة الاحتياطية في تيليجرام."
+)
+RESTORE_PREDICTIONS_FILE_FAILED = "تعذّر قراءة ملف النسخة الاحتياطية."
+RESTORE_PREDICTIONS_USAGE = (
+    "الاستخدام: /restorepredictions\n"
+    "أو أرسل /restorepredictions مع ملف JSON أو ردّ على رسالة النسخة الاحتياطية."
+)
 PREDICTIONS_NEVER_DELETED = (
     "التوقعات وملفات Excel محفوظة. "
     "النقاط اليدوية للمجموعة تُضاف فوق نقاط التوقعات."

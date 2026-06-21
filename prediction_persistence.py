@@ -1,6 +1,7 @@
 import json
 import logging
 import shutil
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -163,20 +164,78 @@ def restore_from_archive() -> int:
     return restored
 
 
+def _count_predictions_in_db(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    try:
+        conn = sqlite3.connect(path)
+        try:
+            return int(conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0])
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return 0
+
+
+def best_database_backup_path() -> Path | None:
+    if not DB_BACKUPS_DIR.is_dir():
+        return None
+    best_path: Path | None = None
+    best_count = -1
+    for path in DB_BACKUPS_DIR.glob("bot_*.db"):
+        count = _count_predictions_in_db(path)
+        if count > best_count:
+            best_count = count
+            best_path = path
+    return best_path
+
+
+def restore_database_from_best_backup() -> bool:
+    """Replace bot.db with the richest full-database copy when predictions were lost."""
+    best_path = best_database_backup_path()
+    if not best_path:
+        return False
+
+    best_count = _count_predictions_in_db(best_path)
+    if best_count <= 0:
+        return False
+
+    current_count = _count_predictions_in_db(DATABASE_PATH) if DATABASE_PATH.is_file() else 0
+    if current_count >= best_count:
+        return False
+
+    _ensure_dirs()
+    shutil.copy2(best_path, DATABASE_PATH)
+    logger.warning(
+        "Restored full database from %s (%d predictions, was %d)",
+        best_path.name,
+        best_count,
+        current_count,
+    )
+    return True
+
+
 def recover_predictions_if_regressed() -> int:
-    """If prediction count dropped, merge back from archive and JSON backups."""
+    """If prediction count dropped or DB is empty, merge back from all local backups."""
     current = count_predictions()
     highwater = _load_highwater()
+
+    if current == 0 or (highwater > 0 and current < highwater):
+        if highwater > 0 and current < highwater:
+            logger.warning(
+                "Prediction count dropped (%d -> %d). Recovering from archive/backups.",
+                highwater,
+                current,
+            )
+        elif current == 0:
+            logger.warning("Predictions database is empty. Attempting recovery.")
+
+        restore_database_from_best_backup()
+        current = count_predictions()
+
     if highwater > 0 and current >= highwater:
         update_highwater_mark()
         return 0
-
-    if highwater > 0 and current < highwater:
-        logger.warning(
-            "Prediction count dropped (%d -> %d). Recovering from archive/backups.",
-            highwater,
-            current,
-        )
 
     restored = restore_from_archive()
     from prediction_backup import merge_missing_predictions_from_backup
@@ -184,6 +243,25 @@ def recover_predictions_if_regressed() -> int:
     restored += merge_missing_predictions_from_backup()
     update_highwater_mark()
     return restored
+
+
+def prepare_database_before_init() -> None:
+    """Run before schema init — recover from full DB copy or remote backup if wiped."""
+    _ensure_dirs()
+    if not DATABASE_PATH.is_file():
+        restore_database_from_best_backup()
+    elif count_predictions() == 0:
+        restore_database_from_best_backup()
+
+    if count_predictions() == 0:
+        try:
+            from remote_prediction_backup import fetch_remote_backup
+
+            fetched = fetch_remote_backup()
+            if fetched:
+                logger.info("Recovered %d predictions from remote backup", fetched)
+        except Exception as exc:
+            logger.warning("Remote backup fetch skipped: %s", exc)
 
 
 def run_startup_persistence() -> dict[str, int | str | None]:
@@ -196,6 +274,7 @@ def run_startup_persistence() -> dict[str, int | str | None]:
         "count": count_predictions(),
         "db_backup": None,
         "json_backup": None,
+        "storage_warning": None,
     }
 
     recovered = recover_predictions_if_regressed()
@@ -212,6 +291,26 @@ def run_startup_persistence() -> dict[str, int | str | None]:
     if json_backup:
         results["json_backup"] = json_backup.name
 
-    results["count"] = count_predictions()
+    final_count = count_predictions()
+    results["count"] = final_count
     update_highwater_mark()
+
+    highwater = _load_highwater()
+    if final_count == 0 and highwater == 0:
+        has_local = bool(best_database_backup_path() or ARCHIVE_PATH.is_file())
+        if not has_local:
+            results["storage_warning"] = "ephemeral"
+            logger.error(
+                "No predictions and no local backups. "
+                "Mount a Railway volume at /app/data or set REMOTE_PREDICTION_BACKUP_URL."
+            )
+    elif highwater > 0 and final_count < highwater:
+        results["storage_warning"] = "partial_loss"
+        logger.error(
+            "Could not fully recover predictions (%d of %d). "
+            "Check Railway volume at /app/data.",
+            final_count,
+            highwater,
+        )
+
     return results

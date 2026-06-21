@@ -952,6 +952,12 @@ def save_prediction(
                 points=prediction.points,
             )
             update_highwater_mark()
+            try:
+                from remote_prediction_backup import push_remote_backup
+
+                push_remote_backup()
+            except Exception:
+                pass
     except Exception as exc:
         logger.warning("Prediction archive write failed: %s", exc)
     return prediction, was_update

@@ -63,6 +63,12 @@ async def post_init(application: Application) -> None:
             BotCommand("help", "المساعدة"),
         ]
     )
+    try:
+        from telegram_backup import send_backup_to_admins
+
+        await send_backup_to_admins(application.bot, force=True)
+    except Exception as exc:
+        logger.warning("Startup Telegram backup failed: %s", exc)
     if application.job_queue:
         application.job_queue.run_repeating(
             _sync_open_matches_job, interval=60, first=10
@@ -93,14 +99,21 @@ async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         from prediction_persistence import backup_database_file, update_highwater_mark
         from prediction_backup import backup_predictions_if_needed
+        from remote_prediction_backup import push_remote_backup
+        from telegram_backup import send_backup_to_admins
         import time
+
+        backup_predictions_if_needed()
+        push_remote_backup()
+        await send_backup_to_admins(context.bot)
 
         last = context.application.bot_data.get("last_prediction_backup", 0)
         now = time.time()
         if now - last >= 3600:
-            backup_predictions_if_needed()
             backup_database_file()
             update_highwater_mark()
+            push_remote_backup(force=True)
+            await send_backup_to_admins(context.bot, force=True)
             context.application.bot_data["last_prediction_backup"] = now
     except Exception as exc:
         logger.warning("Periodic prediction backup failed: %s", exc)
@@ -111,6 +124,9 @@ def main() -> None:
         logger.error("TELEGRAM_BOT_TOKEN is not set. Copy .env.example to .env and fill it in.")
         sys.exit(1)
 
+    from prediction_persistence import prepare_database_before_init
+
+    prepare_database_before_init()
     init_db()
     from prediction_persistence import run_startup_persistence
 
@@ -124,6 +140,11 @@ def main() -> None:
         )
     else:
         logger.info("Predictions in database: %d", persistence["count"])
+    if persistence.get("storage_warning") == "ephemeral":
+        logger.error(
+            "DATA WILL BE LOST ON EVERY DEPLOY — add Railway volume at /app/data "
+            "or REMOTE_PREDICTION_BACKUP_URL"
+        )
     auto_points = sync_auto_group_points()
     if auto_points:
         logger.info("Applied auto group points for %d member(s)", auto_points)

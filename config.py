@@ -13,6 +13,10 @@ ADMIN_USER_IDS = {
 }
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "data/bot.db"))
 
+# Optional: survives Railway redeploys when mounted volume is missing
+REMOTE_PREDICTION_BACKUP_URL = os.getenv("REMOTE_PREDICTION_BACKUP_URL", "").strip()
+REMOTE_PREDICTION_BACKUP_TOKEN = os.getenv("REMOTE_PREDICTION_BACKUP_TOKEN", "").strip()
+
 # Optional: Telegram chat ID for https://t.me/alkoram3na (used if @username lookup fails)
 ALKORAM3NA_GROUP_CHAT_ID = os.getenv("ALKORAM3NA_GROUP_CHAT_ID", "").strip()
 # Optional: Telegram chat ID for K m3na groub (https://t.me/+2TIcPEGwjo8wOTg0)
