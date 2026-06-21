@@ -430,6 +430,7 @@ def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE, user_id: int | N
         "prediction_home_team",
         "prediction_away_team",
         "prediction_prompt_id",
+        "pending_score_pair",
     ):
         context.user_data.pop(key, None)
     if user_id is not None:
@@ -532,29 +533,21 @@ def _parse_score_input(text: str) -> tuple[int, int] | None:
     return home_score, away_score
 
 
-def _validate_score_for_pick(
-    pick: str,
-    home_score: int,
-    away_score: int,
-    home_team: str,
-    away_team: str,
-) -> str | None:
-    score_label = f"{home_score}-{away_score}"
+def _scores_from_pick(
+    pick: str, first: int, second: int
+) -> tuple[int, int] | str:
     if pick == "draw":
-        if home_score != away_score:
+        if first != second:
             return msg.DRAW_SCORES_MUST_EQUAL
-        return None
-    if home_score == away_score:
+        return first, second
+
+    if first == second:
         return msg.UNEAQUAL_SCORES_FOR_WINNER
-    if pick == "home" and home_score < away_score:
-        return msg.SCORE_CONFLICT_HOME.format(
-            home=home_team, away=away_team, score=score_label
-        )
-    if pick == "away" and away_score < home_score:
-        return msg.SCORE_CONFLICT_AWAY.format(
-            home=home_team, away=away_team, score=score_label
-        )
-    return None
+
+    high, low = max(first, second), min(first, second)
+    if pick == "home":
+        return high, low
+    return low, high
 
 
 async def _prompt_score_text(
@@ -723,14 +716,25 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     bot_username=BOT_USERNAME,
                 )
                 return
-            await _finalize_prediction(
-                update,
-                context,
-                participant,
-                match_id,
-                parsed[0],
-                parsed[1],
-            )
+            match = db.get_match(match_id)
+            if not match:
+                await reply_to_user(
+                    update,
+                    context,
+                    msg.MATCH_NOT_FOUND.format(id=match_id),
+                    bot_username=BOT_USERNAME,
+                )
+                return
+            if not db.match_accepts_predictions(match):
+                await reply_to_user(
+                    update,
+                    context,
+                    msg.MATCH_CLOSED.format(id=match_id),
+                    bot_username=BOT_USERNAME,
+                )
+                return
+            context.user_data["pending_score_pair"] = parsed
+            await _prompt_winner_pick(update, context, match)
             return
 
         match = db.get_match(match_id)
@@ -829,6 +833,28 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             _clear_prediction_state(context, user_db_id)
             return
 
+        pending = context.user_data.pop("pending_score_pair", None)
+        if pending:
+            result = _scores_from_pick(pick, pending[0], pending[1])
+            if isinstance(result, str):
+                await edit_or_send_user(
+                    update, context, f"{result}\n{msg.SEND_CANCEL}", bot_username=BOT_USERNAME
+                )
+                return
+            home_score, away_score = result
+            participant = db.get_user_by_telegram_id(user.id)
+            if not participant:
+                return
+            await _finalize_prediction(
+                update,
+                context,
+                participant,
+                match_id,
+                home_score,
+                away_score,
+            )
+            return
+
         await _prompt_score_text(update, context, match, pick)
 
 
@@ -854,17 +880,22 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     pick = context.user_data["prediction_pick"]
-    home_score, away_score = parsed
-    home_team = context.user_data["prediction_home_team"]
-    away_team = context.user_data["prediction_away_team"]
-    error = _validate_score_for_pick(
-        pick, home_score, away_score, home_team, away_team
-    )
-    if error:
-        await reply_to_user(
-            update, context, f"{error}\n{msg.SEND_CANCEL}", bot_username=BOT_USERNAME
-        )
-        return
+    if pick == "draw":
+        if parsed[0] != parsed[1]:
+            await reply_to_user(
+                update, context, f"{msg.DRAW_SCORES_MUST_EQUAL}\n{msg.SEND_CANCEL}",
+                bot_username=BOT_USERNAME,
+            )
+            return
+        home_score, away_score = parsed[0], parsed[1]
+    else:
+        result = _scores_from_pick(pick, parsed[0], parsed[1])
+        if isinstance(result, str):
+            await reply_to_user(
+                update, context, f"{result}\n{msg.SEND_CANCEL}", bot_username=BOT_USERNAME
+            )
+            return
+        home_score, away_score = result
 
     match_id = context.user_data["prediction_match_id"]
     await _finalize_prediction(
