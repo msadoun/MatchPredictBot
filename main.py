@@ -163,7 +163,7 @@ def main() -> None:
 
     auto_points = sync_auto_group_points()
     if auto_points:
-        logger.info("Applied auto group points for %d member(s)", auto_points)
+        logger.info("Synced group points / roster for %d member(s)", auto_points)
     seed_result = ensure_world_cup_seeded()
     if seed_result["added"]:
         logger.info("Seeded %d World Cup matches on startup", seed_result["added"])

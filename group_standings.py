@@ -36,6 +36,9 @@ KM3NA_STANDINGS: list[tuple[str, int]] = [
     ("AHMED", 17),
 ]
 
+# K m3na groub — Telegram supergroup (user ID: 1001298782951 → -1001298782951)
+ROSTER_GROUP_CHAT_ID = -1001298782951
+
 GROUP_STANDING_ALIASES: dict[str, list[tuple[str, int]]] = {
     ALKORAM3NA_GROUP_USERNAME: ALKORAM3NA_STANDINGS,
     "alkora": ALKORAM3NA_STANDINGS,
@@ -45,6 +48,7 @@ GROUP_STANDING_ALIASES: dict[str, list[tuple[str, int]]] = {
     "k m3na groub": KM3NA_STANDINGS,
     "k_m3na": KM3NA_STANDINGS,
     KM3NA_INVITE_SLUG: KM3NA_STANDINGS,
+    str(ROSTER_GROUP_CHAT_ID).lstrip("-"): KM3NA_STANDINGS,
 }
 
 GROUP_TITLE_HINTS: dict[str, set[str]] = {
@@ -57,6 +61,7 @@ PREDEFINED_GROUP_STANDINGS = GROUP_STANDING_ALIASES
 # Always listed in admin Excel exports (empty cells if no prediction yet).
 # Existing members with predictions are never removed — this list only adds rows.
 EXCEL_ALWAYS_INCLUDE_USERS: list[str] = [
+    "M2usab",
     "waelalamoudi",
     "AbduIIah7k",
     "حازم .",
@@ -67,10 +72,36 @@ EXCEL_ALWAYS_INCLUDE_USERS: list[str] = [
 
 # Alternate spellings tried when resolving Excel roster usernames.
 EXCEL_USER_ALIASES: dict[str, tuple[str, ...]] = {
+    "M2usab": ("M2usab", "m2usab"),
     "AbduIIah7k": ("AbduIIah7k", "Abdullah7K", "AbduIIah7K"),
     "waelalamoudi": ("waelalamoudi",),
     "shamlan1998": ("shamlan1998",),
-    "HMAsir0": ("HMAsir0", "HMAsir0"),
+    "HMAsir0": ("HMAsir0",),
     "AHMED": ("AHMED",),
     "حازم .": ("حازم .", "حازم"),
 }
+
+
+def resolve_roster_user(ref: str):
+    """Resolve a roster username/display name to a User (or None)."""
+    from database import resolve_user_ref
+
+    aliases = EXCEL_USER_ALIASES.get(ref, (ref,))
+    for alias in aliases:
+        user = resolve_user_ref(alias)
+        if user:
+            return user
+    return None
+
+
+def roster_manual_points(ref: str) -> int | None:
+    """Manual base points for a roster member in ROSTER_GROUP_CHAT_ID."""
+    aliases = {a.lower() for a in EXCEL_USER_ALIASES.get(ref, (ref,))}
+    aliases.add(ref.strip().lstrip("@").lower())
+    for name, points in KM3NA_STANDINGS:
+        if name.lower() in aliases:
+            return points
+        for alias in EXCEL_USER_ALIASES.get(name, (name,)):
+            if alias.lower() in aliases:
+                return points
+    return None

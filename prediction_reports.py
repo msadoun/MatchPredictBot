@@ -113,15 +113,9 @@ def scope_label(scope_type: str, scope_key: str) -> str:
 
 
 def _resolve_excel_roster_user(ref: str):
-    from database import resolve_user_ref
-    from group_standings import EXCEL_USER_ALIASES
+    from group_standings import resolve_roster_user
 
-    aliases = EXCEL_USER_ALIASES.get(ref, (ref,))
-    for alias in aliases:
-        user = resolve_user_ref(alias)
-        if user:
-            return user
-    return None
+    return resolve_roster_user(ref)
 
 
 def _resolve_always_include_users(

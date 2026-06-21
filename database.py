@@ -1193,9 +1193,46 @@ def ensure_auto_users_in_configured_groups() -> int:
     return len(chat_ids)
 
 
+def ensure_excel_roster_group_members() -> int:
+    """Register Excel roster users in ROSTER_GROUP_CHAT_ID with K m3na base points."""
+    from group_standings import (
+        EXCEL_ALWAYS_INCLUDE_USERS,
+        ROSTER_GROUP_CHAT_ID,
+        resolve_roster_user,
+        roster_manual_points,
+    )
+
+    registered = 0
+    for ref in EXCEL_ALWAYS_INCLUDE_USERS:
+        user = resolve_roster_user(ref)
+        if not user and ref.strip().lstrip("@").lower() == "m2usab":
+            user = ensure_auto_point_user()
+        if not user:
+            logger.warning("Roster user not found, skipping group registration: %s", ref)
+            continue
+
+        register_group_member(ROSTER_GROUP_CHAT_ID, user.id)
+        points = roster_manual_points(ref)
+        if points is not None:
+            set_group_manual_points(ROSTER_GROUP_CHAT_ID, user.id, points)
+        registered += 1
+
+    if registered:
+        logger.info(
+            "Registered %d roster user(s) in group %s",
+            registered,
+            ROSTER_GROUP_CHAT_ID,
+        )
+    return registered
+
+
 def refresh_group_auto_points(chat_id: int) -> None:
     """Re-apply auto base points for every member when showing a group leaderboard."""
+    from group_standings import ROSTER_GROUP_CHAT_ID
+
     ensure_auto_users_in_configured_groups()
+    if chat_id == ROSTER_GROUP_CHAT_ID:
+        ensure_excel_roster_group_members()
     with get_db() as conn:
         rows = conn.execute(
             "SELECT user_id FROM group_members WHERE chat_id = ?",
@@ -1241,7 +1278,8 @@ def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
 
 def sync_auto_group_points() -> int:
     """Apply auto points for all known group members (e.g. @M2usab)."""
-    updated = ensure_auto_users_in_configured_groups()
+    updated = ensure_excel_roster_group_members()
+    updated += ensure_auto_users_in_configured_groups()
     with get_db() as conn:
         rows = conn.execute(
             """
