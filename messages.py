@@ -58,6 +58,11 @@ CHOOSE_MATCH = "اختر مباراة للتوقع ({date}):"
 WHO_WINS = "من سيفوز؟"
 MATCH_HEADER = "المباراة #{id}\n{home} {vs} {away}"
 
+PREDICT_USAGE = (
+    "الاستخدام: /predict [رقم_المباراة] [النتيجة]\n"
+    "مثال: /predict 35 3-0"
+)
+
 MATCH_ID_NOT_NUMBER = "رقم المباراة يجب أن يكون رقماً."
 MATCH_NOT_FOUND = "المباراة #{id} غير موجودة."
 MATCH_CLOSED = "المباراة #{id} مغلقة. لم يعد بإمكانك التوقع."
@@ -139,6 +144,13 @@ SETRESULT_USAGE = (
 )
 SCORES_MUST_BE_NUMBERS = "رقم المباراة والأهداف يجب أن تكون أرقاماً."
 RESULT_RECORDED = "تم تسجيل النتيجة وتحديث النقاط.\n\n{match}"
+
+SETPREDICTION_USAGE = (
+    "الاستخدام: /setprediction <telegram_id> <رقم_المباراة> <النتيجة>\n"
+    "مثال: /setprediction 10140530 35 3-0"
+)
+PREDICTION_SET = "تم تعيين التوقع — {home} {vs} {away}: {score} ({points} نقطة)"
+USER_NOT_FOUND = "المستخدم غير موجود."
 
 NO_MATCHES_YET = "لم تُنشأ أي مباريات بعد."
 ALL_MATCHES = "جميع المباريات:\n"

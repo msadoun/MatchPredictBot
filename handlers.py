@@ -422,7 +422,7 @@ def _group_chat_id(update: Update) -> int:
     return 0
 
 
-def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE) -> None:
+def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE, user_id: int | None = None) -> None:
     for key in (
         "prediction_step",
         "prediction_match_id",
@@ -432,6 +432,93 @@ def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE) -> None:
         "prediction_prompt_id",
     ):
         context.user_data.pop(key, None)
+    if user_id is not None:
+        db.clear_prediction_draft(user_id)
+
+
+def _load_prediction_draft(
+    context: ContextTypes.DEFAULT_TYPE, user_id: int
+) -> bool:
+    draft = db.get_prediction_draft(user_id)
+    if not draft:
+        return False
+    context.user_data["prediction_step"] = "entering_score"
+    context.user_data["prediction_match_id"] = draft.match_id
+    context.user_data["prediction_pick"] = draft.pick
+    context.user_data["prediction_home_team"] = draft.home_team
+    context.user_data["prediction_away_team"] = draft.away_team
+    return True
+
+
+async def _finalize_prediction(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    participant: db.User,
+    match_id: int,
+    home_score: int,
+    away_score: int,
+    *,
+    allow_closed: bool = False,
+) -> bool:
+    home_team = ""
+    away_team = ""
+    match = db.get_match(match_id)
+    if not match:
+        await reply_to_user(
+            update,
+            context,
+            msg.MATCH_NOT_FOUND.format(id=match_id),
+            bot_username=BOT_USERNAME,
+        )
+        return False
+
+    home_team = match.home_team
+    away_team = match.away_team
+
+    if not allow_closed and not db.match_accepts_predictions(match):
+        _clear_prediction_state(context, participant.id)
+        await reply_to_user(
+            update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
+        )
+        return False
+
+    try:
+        prediction, was_update = db.save_prediction(
+            participant.id,
+            match_id,
+            home_score,
+            away_score,
+            allow_closed=allow_closed,
+        )
+    except ValueError:
+        _clear_prediction_state(context, participant.id)
+        await reply_to_user(
+            update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
+        )
+        return False
+
+    _clear_prediction_state(context, participant.id)
+    if home_score == away_score:
+        outcome = msg.DRAW
+    elif home_score > away_score:
+        outcome = home_team
+    else:
+        outcome = away_team
+
+    template = msg.PREDICTION_UPDATED if was_update else msg.PREDICTION_SAVED
+    await reply_to_user(
+        update,
+        context,
+        template.format(
+            home=home_team,
+            vs=msg.VS,
+            away=away_team,
+            outcome=outcome,
+            score=f"{home_score}-{away_score}",
+        ),
+        bot_username=BOT_USERNAME,
+    )
+    return True
 
 
 def _parse_score_input(text: str) -> tuple[int, int] | None:
@@ -473,6 +560,16 @@ async def _prompt_score_text(
     context.user_data["prediction_pick"] = pick
     context.user_data["prediction_home_team"] = match.home_team
     context.user_data["prediction_away_team"] = match.away_team
+
+    participant = _ensure_participant(update)
+    if participant:
+        db.save_prediction_draft(
+            participant.id,
+            match.id,
+            pick,
+            match.home_team,
+            match.away_team,
+        )
 
     if pick == "draw":
         text = msg.PICK_DRAW_PROMPT.format(
@@ -589,8 +686,8 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     _ensure_participant(update)
-    _clear_prediction_state(context)
     participant = db.get_user_by_telegram_id(user.id)
+    _clear_prediction_state(context, participant.id if participant else None)
     group_chat_id = _group_chat_id(update)
     if group_chat_id and participant:
         db.set_user_active_group(participant.id, group_chat_id)
@@ -602,6 +699,29 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except ValueError:
             await reply_to_user(
                 update, context, msg.MATCH_ID_NOT_NUMBER, bot_username=BOT_USERNAME
+            )
+            return
+
+        if len(context.args) >= 2 and participant:
+            score_text = context.args[1] if len(context.args) == 2 else "-".join(
+                context.args[1:]
+            )
+            parsed = _parse_score_input(score_text)
+            if parsed is None:
+                await reply_to_user(
+                    update,
+                    context,
+                    f"{msg.INVALID_SCORE_FORMAT}\n{msg.PREDICT_USAGE}",
+                    bot_username=BOT_USERNAME,
+                )
+                return
+            await _finalize_prediction(
+                update,
+                context,
+                participant,
+                match_id,
+                parsed[0],
+                parsed[1],
             )
             return
 
@@ -630,16 +750,19 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def predict_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if context.user_data.get("prediction_step") != "entering_score":
-        _clear_prediction_state(context)
-        await user_response(
-            update,
-            context,
-            msg.START_TEXT,
-            reply_markup=main_menu_keyboard(),
-        )
-        return
-    _clear_prediction_state(context)
+    participant = _ensure_participant(update)
+    user_id = participant.id if participant else None
+    if context.user_data.get("prediction_step") != "entering_score" and participant:
+        if not _load_prediction_draft(context, participant.id):
+            _clear_prediction_state(context, user_id)
+            await user_response(
+                update,
+                context,
+                msg.START_TEXT,
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+    _clear_prediction_state(context, user_id)
     await user_response(update, context, msg.PREDICTION_CANCELLED)
 
 
@@ -653,13 +776,14 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not user:
         return
 
-    _ensure_participant(update)
+    participant = _ensure_participant(update)
+    user_db_id = participant.id if participant else None
     parts = query.data.split(":")
     if len(parts) < 3 or parts[0] != "pred":
         return
 
     if parts[1] == "cancel":
-        _clear_prediction_state(context)
+        _clear_prediction_state(context, user_db_id)
         await edit_or_send_user(
             update, context, msg.PREDICTION_CANCELLED, bot_username=BOT_USERNAME
         )
@@ -694,7 +818,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await edit_or_send_user(
                 update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
             )
-            _clear_prediction_state(context)
+            _clear_prediction_state(context, user_db_id)
             return
 
         await _prompt_score_text(update, context, match, pick)
@@ -703,10 +827,16 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_group_chat(update):
         return
-    if context.user_data.get("prediction_step") != "entering_score":
-        return
     if not update.message or not update.message.text:
         return
+
+    participant = _ensure_participant(update)
+    if not participant:
+        return
+
+    if context.user_data.get("prediction_step") != "entering_score":
+        if not _load_prediction_draft(context, participant.id):
+            return
 
     parsed = _parse_score_input(update.message.text)
     if parsed is None:
@@ -728,54 +858,13 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
         home_score, away_score = result
 
     match_id = context.user_data["prediction_match_id"]
-    home_team = context.user_data["prediction_home_team"]
-    away_team = context.user_data["prediction_away_team"]
-
-    if home_score == away_score:
-        outcome = msg.DRAW
-    elif home_score > away_score:
-        outcome = home_team
-    else:
-        outcome = away_team
-
-    participant = _ensure_participant(update)
-    if not participant:
-        return
-
-    match = db.get_match(match_id)
-    if not match or not db.match_accepts_predictions(match):
-        _clear_prediction_state(context)
-        await reply_to_user(
-            update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
-        )
-        return
-
-    try:
-        prediction, was_update = db.save_prediction(
-            participant.id,
-            match_id,
-            home_score,
-            away_score,
-        )
-    except ValueError:
-        _clear_prediction_state(context)
-        await reply_to_user(
-            update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
-        )
-        return
-    _clear_prediction_state(context)
-    template = msg.PREDICTION_UPDATED if was_update else msg.PREDICTION_SAVED
-    await reply_to_user(
+    await _finalize_prediction(
         update,
         context,
-        template.format(
-            home=home_team,
-            vs=msg.VS,
-            away=away_team,
-            outcome=outcome,
-            score=f"{home_score}-{away_score}",
-        ),
-        bot_username=BOT_USERNAME,
+        participant,
+        match_id,
+        home_score,
+        away_score,
     )
 
 
@@ -898,6 +987,87 @@ async def add_match_command(
         update,
         context,
         msg.MATCH_CREATED.format(match=format_match(match), id=match.id),
+        bot_username=BOT_USERNAME,
+    )
+
+
+async def set_prediction_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if len(context.args) < 3:
+        await reply_to_user(
+            update, context, msg.SETPREDICTION_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+
+    try:
+        telegram_id = int(context.args[0])
+        match_id = int(context.args[1])
+    except ValueError:
+        await reply_to_user(
+            update, context, msg.SCORES_MUST_BE_NUMBERS, bot_username=BOT_USERNAME
+        )
+        return
+
+    score_text = context.args[2] if len(context.args) == 3 else "-".join(context.args[2:])
+    parsed = _parse_score_input(score_text)
+    if parsed is None:
+        await reply_to_user(
+            update, context, msg.INVALID_SCORE_FORMAT, bot_username=BOT_USERNAME
+        )
+        return
+
+    participant = db.get_user_by_telegram_id(telegram_id)
+    if not participant:
+        await reply_to_user(
+            update, context, msg.USER_NOT_FOUND, bot_username=BOT_USERNAME
+        )
+        return
+
+    match = db.get_match(match_id)
+    if not match:
+        await reply_to_user(
+            update,
+            context,
+            msg.MATCH_NOT_FOUND.format(id=match_id),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    home_score, away_score = parsed
+    try:
+        prediction, _ = db.save_prediction(
+            participant.id,
+            match_id,
+            home_score,
+            away_score,
+            allow_closed=True,
+        )
+    except ValueError as exc:
+        await reply_to_user(
+            update, context, str(exc), bot_username=BOT_USERNAME
+        )
+        return
+
+    db.recalculate_all_prediction_points()
+    points = prediction.points if prediction.points is not None else 0
+    await reply_to_user(
+        update,
+        context,
+        msg.PREDICTION_SET.format(
+            home=match.home_team,
+            vs=msg.VS,
+            away=match.away_team,
+            score=f"{home_score}-{away_score}",
+            points=points,
+        ),
         bot_username=BOT_USERNAME,
     )
 

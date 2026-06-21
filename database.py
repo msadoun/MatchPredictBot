@@ -162,6 +162,32 @@ def init_db() -> None:
         _migrate_predictions_for_groups(conn)
         _migrate_users_active_group(conn)
         _migrate_predictions_global(conn)
+        _migrate_prediction_drafts(conn)
+
+
+@dataclass
+class PredictionDraft:
+    user_id: int
+    match_id: int
+    pick: str
+    home_team: str
+    away_team: str
+
+
+def _migrate_prediction_drafts(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prediction_drafts (
+            user_id INTEGER PRIMARY KEY,
+            match_id INTEGER NOT NULL,
+            pick TEXT NOT NULL,
+            home_team TEXT NOT NULL,
+            away_team TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """
+    )
 
 
 def _migrate_predictions_global(conn: sqlite3.Connection) -> None:
@@ -621,10 +647,14 @@ def save_prediction(
     match_id: int,
     home_score: int,
     away_score: int,
+    *,
+    allow_closed: bool = False,
 ) -> tuple[Prediction, bool]:
     """Save one global prediction per user per match. Returns (prediction, was_update)."""
     match = get_match(match_id)
-    if not match or not match_accepts_predictions(match):
+    if not match:
+        raise ValueError("match_not_found")
+    if not allow_closed and not match_accepts_predictions(match):
         raise ValueError("match_not_open")
 
     now = datetime.utcnow().isoformat()
@@ -686,7 +716,54 @@ def save_prediction(
             "SELECT * FROM predictions WHERE id = ?",
             (keep_id,),
         ).fetchone()
+    clear_prediction_draft(user_id)
     return _row_to_prediction(row), was_update
+
+
+def save_prediction_draft(
+    user_id: int,
+    match_id: int,
+    pick: str,
+    home_team: str,
+    away_team: str,
+) -> None:
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO prediction_drafts (user_id, match_id, pick, home_team, away_team, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                match_id = excluded.match_id,
+                pick = excluded.pick,
+                home_team = excluded.home_team,
+                away_team = excluded.away_team,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, match_id, pick, home_team, away_team, now),
+        )
+
+
+def get_prediction_draft(user_id: int) -> PredictionDraft | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM prediction_drafts WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return PredictionDraft(
+        user_id=row["user_id"],
+        match_id=row["match_id"],
+        pick=row["pick"],
+        home_team=row["home_team"],
+        away_team=row["away_team"],
+    )
+
+
+def clear_prediction_draft(user_id: int) -> None:
+    with get_db() as conn:
+        conn.execute("DELETE FROM prediction_drafts WHERE user_id = ?", (user_id,))
 
 
 def user_has_prediction(user_id: int, match_id: int) -> bool:

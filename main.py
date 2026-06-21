@@ -30,6 +30,7 @@ from handlers import (
     predict_cancel_command,
     predict_command,
     predict_score_message,
+    set_prediction_command,
     set_result_command,
     stale_keyboard_handler,
     start_command,
@@ -119,6 +120,7 @@ def main() -> None:
     app.add_handler(CommandHandler("addmatch", add_match_command))
     app.add_handler(CommandHandler("loadworldcup", load_worldcup_command))
     app.add_handler(CommandHandler("setresult", set_result_command))
+    app.add_handler(CommandHandler("setprediction", set_prediction_command))
     app.add_handler(CommandHandler("allmatches", list_all_matches_command))
     app.add_handler(CommandHandler("closematch", close_match_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
