@@ -39,6 +39,31 @@ KM3NA_STANDINGS: list[tuple[str, int]] = [
 # K m3na groub — Telegram supergroup (user ID: 1001298782951 → -1001298782951)
 ROSTER_GROUP_CHAT_ID = -1001298782951
 
+GROUP_CHAT_DISPLAY_NAMES: dict[int, str] = {
+    ROSTER_GROUP_CHAT_ID: "K m3na groub",
+}
+
+
+def group_display_name(
+    chat_id: int,
+    *,
+    telegram_title: str | None = None,
+) -> str | None:
+    """Human-readable group label — never returns a raw chat ID."""
+    title = (telegram_title or "").strip()
+    if title and title != str(chat_id) and not title.lstrip("-").isdigit():
+        return title
+
+    from config import ALKORAM3NA_GROUP_CHAT_ID, KM3NA_GROUP_CHAT_ID
+
+    names = dict(GROUP_CHAT_DISPLAY_NAMES)
+    if KM3NA_GROUP_CHAT_ID.lstrip("-").isdigit():
+        names[int(KM3NA_GROUP_CHAT_ID)] = "K m3na groub"
+    if ALKORAM3NA_GROUP_CHAT_ID.lstrip("-").isdigit():
+        names[int(ALKORAM3NA_GROUP_CHAT_ID)] = "الكورة معنا"
+    return names.get(chat_id)
+
+
 GROUP_STANDING_ALIASES: dict[str, list[tuple[str, int]]] = {
     ALKORAM3NA_GROUP_USERNAME: ALKORAM3NA_STANDINGS,
     "alkora": ALKORAM3NA_STANDINGS,

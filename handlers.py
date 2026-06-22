@@ -14,6 +14,7 @@ from group_standings import (
     KM3NA_GROUP_USERNAME,
     KM3NA_INVITE_SLUG,
     PREDEFINED_GROUP_STANDINGS,
+    group_display_name,
 )
 from user_messaging import edit_or_send_user, is_group_chat, reply_to_user
 
@@ -102,6 +103,19 @@ def format_leaderboard_text(
     return "\n".join(lines)
 
 
+async def _resolve_group_display_name(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> str | None:
+    telegram_title: str | None = None
+    try:
+        chat = await context.bot.get_chat(chat_id)
+        telegram_title = chat.title
+    except Exception:
+        pass
+    return group_display_name(chat_id, telegram_title=telegram_title)
+
+
 async def send_leaderboard(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -112,11 +126,7 @@ async def send_leaderboard(
     is_group_scope = group_chat_id is not None and group_chat_id != 0
     group_name: str | None = None
     if is_group_scope:
-        try:
-            chat = await context.bot.get_chat(group_chat_id)
-            group_name = chat.title
-        except Exception:
-            group_name = None
+        group_name = await _resolve_group_display_name(context, group_chat_id)
 
     entries = db.get_leaderboard(limit=15, group_chat_id=group_chat_id if is_group_scope else None)
     total = db.count_leaderboard_participants(
@@ -145,10 +155,16 @@ async def send_leaderboard(
         and viewer_telegram_id
     ):
         participant = db.get_user_by_telegram_id(viewer_telegram_id)
-        if participant and len(db.get_user_group_chat_ids(participant.id)) > 1:
-            markup = InlineKeyboardMarkup(
-                [[InlineKeyboardButton(msg.BTN_SWITCH_GROUP, callback_data="lb:pick")]]
-            )
+        if participant:
+            groups = db.get_user_group_chat_ids(participant.id)
+            named = 0
+            for gid in groups:
+                if await _resolve_group_display_name(context, gid):
+                    named += 1
+            if named > 1:
+                markup = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton(msg.BTN_SWITCH_GROUP, callback_data="lb:pick")]]
+                )
 
     await user_response(
         update,
@@ -175,7 +191,12 @@ def _resolve_leaderboard_group(
 
     stored = context.user_data.get("leaderboard_group_chat_id")
     if stored:
-        return int(stored), False
+        from config import configured_group_chat_ids
+
+        chat_id = int(stored)
+        if chat_id in configured_group_chat_ids():
+            return chat_id, False
+        context.user_data.pop("leaderboard_group_chat_id", None)
 
     active = db.get_user_active_group(participant.id)
     if active:
@@ -194,17 +215,17 @@ def _resolve_leaderboard_group(
 async def _group_leaderboard_picker_keyboard(
     context: ContextTypes.DEFAULT_TYPE,
     group_chat_ids: list[int],
-) -> InlineKeyboardMarkup:
+) -> InlineKeyboardMarkup | None:
     rows = []
     for chat_id in group_chat_ids:
-        try:
-            chat = await context.bot.get_chat(chat_id)
-            label = chat.title or str(chat_id)
-        except Exception:
-            label = str(chat_id)
+        label = await _resolve_group_display_name(context, chat_id)
+        if not label:
+            continue
         rows.append(
             [InlineKeyboardButton(label, callback_data=f"lb:group:{chat_id}")]
         )
+    if not rows:
+        return None
     return InlineKeyboardMarkup(rows)
 
 
@@ -218,6 +239,9 @@ async def _show_group_leaderboard_picker(
         await user_response(update, context, msg.LEADERBOARD_PRIVATE_ONLY)
         return
     keyboard = await _group_leaderboard_picker_keyboard(context, groups)
+    if keyboard is None:
+        await user_response(update, context, msg.LEADERBOARD_PRIVATE_ONLY)
+        return
     await user_response(
         update,
         context,
