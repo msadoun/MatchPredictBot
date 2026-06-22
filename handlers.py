@@ -153,7 +153,7 @@ async def send_leaderboard(
     )
 
     markup = None
-    if is_group_scope and not is_group_chat(update) and viewer_telegram_id:
+    if not is_group_chat(update) and viewer_telegram_id:
         participant = db.get_user_by_telegram_id(viewer_telegram_id)
         if participant and db.get_user_group_chat_ids(participant.id):
             markup = InlineKeyboardMarkup(
@@ -185,10 +185,8 @@ def _resolve_leaderboard_group(
 
     stored = context.user_data.get("leaderboard_group_chat_id")
     if stored:
-        from config import configured_group_chat_ids
-
         chat_id = int(stored)
-        if chat_id in configured_group_chat_ids():
+        if chat_id in db.get_user_group_chat_ids(participant.id):
             return chat_id, False
         context.user_data.pop("leaderboard_group_chat_id", None)
 
@@ -213,19 +211,22 @@ async def _group_picker_keyboard(
     active_chat_id: int | None,
     select_callback: str,
 ) -> InlineKeyboardMarkup | None:
-    rows = []
+    group_rows = []
     for chat_id in group_chat_ids:
         label = await _resolve_group_display_name(context, chat_id)
         if not label:
             continue
         if chat_id == active_chat_id:
             label = f"✓ {label}"
-        rows.append(
+        group_rows.append(
             [InlineKeyboardButton(label, callback_data=f"{select_callback}:{chat_id}")]
         )
-    if not rows:
+    if not group_rows:
         return None
-    return InlineKeyboardMarkup(rows)
+    group_rows.append(
+        [InlineKeyboardButton(msg.BTN_BACK_LEADERBOARD, callback_data="lb:back")]
+    )
+    return InlineKeyboardMarkup(group_rows)
 
 
 async def _show_group_leaderboard_picker(
@@ -287,8 +288,33 @@ async def leaderboard_callback(
         participant = db.get_user_by_telegram_id(user.id)
         if not participant:
             return
-        context.user_data.pop("leaderboard_group_chat_id", None)
         await _show_group_leaderboard_picker(update, context, participant)
+        return
+
+    if parts[1] == "back":
+        user = update.effective_user
+        if not user:
+            return
+        participant = db.get_user_by_telegram_id(user.id)
+        if not participant:
+            return
+        group_chat_id = (
+            context.user_data.get("leaderboard_group_chat_id")
+            or db.get_user_active_group(participant.id)
+        )
+        groups = db.get_user_group_chat_ids(participant.id)
+        if group_chat_id and int(group_chat_id) in groups:
+            group_chat_id = int(group_chat_id)
+        elif groups:
+            group_chat_id = groups[0]
+        else:
+            group_chat_id = None
+        await send_leaderboard(
+            update,
+            context,
+            viewer_telegram_id=user.id,
+            group_chat_id=group_chat_id,
+        )
         return
 
     user = update.effective_user

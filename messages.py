@@ -132,6 +132,7 @@ LEADERBOARD_TITLE_GROUP = "🏆 لوحة متصدرين المجموعة\n"
 LEADERBOARD_TITLE_GROUP_NAMED = "🏆 لوحة متصدرين: {group}\n"
 CHOOSE_GROUP_LEADERBOARD = "اختر مجموعة لعرض لوحة المتصدرين:"
 BTN_SWITCH_GROUP = "🔄 تغيير المجموعة"
+BTN_BACK_LEADERBOARD = "↩️ رجوع للوحة المتصدرين"
 LEADERBOARD_PRIVATE_ONLY = (
     "لا توجد مجموعة مرتبطة بحسابك.\n"
     "استخدم البوت من مجموعة تيليغرام أو توقع من داخل المجموعة أولاً."

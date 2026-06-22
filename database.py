@@ -393,9 +393,11 @@ def get_user_active_group(user_id: int) -> int | None:
         ).fetchone()
     if row and row["active_group_chat_id"]:
         chat_id = int(row["active_group_chat_id"])
-        from config import configured_group_chat_ids
+        from group_standings import LEGACY_KM3NA_GROUP_CHAT_ID
 
-        if chat_id in configured_group_chat_ids():
+        if chat_id == LEGACY_KM3NA_GROUP_CHAT_ID:
+            return None
+        if chat_id in get_user_group_chat_ids(user_id):
             return chat_id
     return None
 
@@ -1439,9 +1441,8 @@ def sync_auto_group_points() -> int:
 
 
 def get_user_group_chat_ids(user_id: int) -> list[int]:
-    from config import configured_group_chat_ids
+    from group_standings import LEGACY_KM3NA_GROUP_CHAT_ID
 
-    allowed = set(configured_group_chat_ids())
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -1451,7 +1452,11 @@ def get_user_group_chat_ids(user_id: int) -> list[int]:
             """,
             (user_id,),
         ).fetchall()
-    return [int(row["chat_id"]) for row in rows if int(row["chat_id"]) in allowed]
+    return [
+        int(row["chat_id"])
+        for row in rows
+        if int(row["chat_id"]) != LEGACY_KM3NA_GROUP_CHAT_ID
+    ]
 
 
 def get_leaderboard(
