@@ -197,11 +197,10 @@ ADMIN_PREDICTIONS_FILE_CAPTION = "تقرير توقعات — {label}"
 SETGROUPPOINTS_USAGE = (
     "الاستخدام:\n"
     "• /setgrouppoints load alkoram3na — الكورة معنا\n"
-    "• /setgrouppoints load km3na — K m3na groub\n"
     "• /setgrouppoints <مجموعة> <مستخدم> <نقاط>\n"
-    "• /setpoints <مستخدم> <نقاط> — K m3na (بدون مجموعة)\n"
-    "مثال: /setpoints M2usab 27\n"
-    "مثال: /setpoints 10140530 27 — برقم تيليجرام حتى بدون /start"
+    "• /setpoints <مستخدم> <نقاط> — الكورة معنا (بدون مجموعة)\n"
+    "مثال: /setpoints M2usab 24\n"
+    "مثال: /setpoints 10140530 24 — برقم تيليجرام حتى بدون /start"
 )
 SETGROUPPOINTS_USER_NOT_FOUND = (
     "المستخدم غير موجود. اطلب منه /start للبوت، "
@@ -217,7 +216,7 @@ SETGROUPPOINTS_MISSING_ROW = "• {ref}"
 SETGROUPPOINTS_ONE_DONE = "تم تعيين {name}: {points} نقطة أساسية في المجموعة «{group}» (تُضاف لتوقعاته)."
 SETGROUPPOINTS_GROUP_NOT_FOUND = (
     "تعذّر العثور على المجموعة. أضف البوت للمجموعة، أو شغّل الأمر من داخلها، "
-    "أو عيّن ALKORAM3NA_GROUP_CHAT_ID / KM3NA_GROUP_CHAT_ID."
+    "أو عيّن ALKORAM3NA_GROUP_CHAT_ID."
 )
 SETGROUPPOINTS_NOTE = (
     "ملاحظة: النقاط اليدوية = نقاط أساسية تُضاف فوق نقاط التوقعات الجديدة. "
@@ -232,14 +231,14 @@ CLEAR_USERDATA_DONE = (
     "• نقاط يدوية: {manual_points}\n"
     "• مباريات محذوفة: {matches}\n"
     "• مباريات جديدة: {seeded}\n\n"
-    "لا مستخدمين ولا توقعات. شغّل /setgrouppoints load km3na عند الحاجة.\n"
+    "لا مستخدمين ولا توقعات. شغّل /setgrouppoints load alkoram3na عند الحاجة.\n"
     "لاسترجاع نسخة قديمة: /restorepredictions"
 )
 RESET_POINTS_DONE = (
     "تم تصفير نقاط الجميع.\n"
     "• مستخدمون: {users_zeroed}\n"
     "• توقعات مُصفّرة: {prediction_scores_cleared}\n\n"
-    "التوقعات نفسها باقية. لتحميل نقاط K m3na: /setgrouppoints load km3na"
+    "التوقعات نفسها باقية. لتحميل نقاط الكورة معنا: /setgrouppoints load alkoram3na"
 )
 RESET_POINTS_CONFIRM = (
     "⚠️ تصفير نقاط الجميع إلى صفر:\n"
@@ -253,7 +252,7 @@ CLEAR_GROUPS_DONE = (
     "• عضويات مجموعات: {group_members}\n"
     "• مجموعات نشطة للمستخدمين: {active_groups_cleared}\n\n"
     "المستخدمون والتوقعات والنقاط باقية.\n"
-    "لإعادة تسجيل K m3na: /setgrouppoints load km3na"
+    "لإعادة تسجيل المجموعة: /setgrouppoints load alkoram3na"
 )
 CLEAR_GROUPS_CONFIRM = (
     "⚠️ حذف جميع المجموعات من البيانات:\n"

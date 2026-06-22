@@ -19,12 +19,6 @@ REMOTE_PREDICTION_BACKUP_TOKEN = os.getenv("REMOTE_PREDICTION_BACKUP_TOKEN", "")
 
 # Optional: Telegram chat ID for https://t.me/alkoram3na (used if @username lookup fails)
 ALKORAM3NA_GROUP_CHAT_ID = os.getenv("ALKORAM3NA_GROUP_CHAT_ID", "").strip()
-# Optional: chat ID for K m3na groub (https://t.me/+2TIcPEGwjo8wOTg0)
-# Defaults to ROSTER_GROUP_CHAT_ID (-1001298782951) if unset
-KM3NA_GROUP_CHAT_ID = os.getenv(
-    "KM3NA_GROUP_CHAT_ID",
-    "-1001298782951",
-).strip()
 
 # Auto leaderboard points for @M2usab in any group (does not change predictions)
 M2USAB_TELEGRAM_ID = int(os.getenv("M2USAB_TELEGRAM_ID", "10140530"))
@@ -33,14 +27,10 @@ M2USAB_AUTO_GROUP_POINTS = int(os.getenv("M2USAB_AUTO_GROUP_POINTS", "24"))
 
 
 def configured_group_chat_ids() -> list[int]:
-    from group_standings import ROSTER_GROUP_CHAT_ID
-
-    ids: set[int] = set()
-    for raw in (ALKORAM3NA_GROUP_CHAT_ID, KM3NA_GROUP_CHAT_ID):
-        if raw.lstrip("-").isdigit():
-            ids.add(int(raw))
-    ids.add(ROSTER_GROUP_CHAT_ID)
-    return list(ids)
+    ids: list[int] = []
+    if ALKORAM3NA_GROUP_CHAT_ID.lstrip("-").isdigit():
+        ids.append(int(ALKORAM3NA_GROUP_CHAT_ID))
+    return ids
 
 _DEFAULT_PREDICTION_BACKFILLS = ""
 _raw_backfills = os.getenv("PREDICTION_BACKFILLS")

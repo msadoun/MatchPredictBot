@@ -6,13 +6,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 import database as db
-from config import ADMIN_USER_IDS, ALKORAM3NA_GROUP_CHAT_ID, KM3NA_GROUP_CHAT_ID
+from config import ADMIN_USER_IDS, ALKORAM3NA_GROUP_CHAT_ID
 import messages as msg
 from group_standings import (
     ALKORAM3NA_GROUP_USERNAME,
     GROUP_TITLE_HINTS,
-    KM3NA_GROUP_USERNAME,
-    KM3NA_INVITE_SLUG,
     PREDEFINED_GROUP_STANDINGS,
     group_display_name,
 )
@@ -1687,11 +1685,6 @@ async def _resolve_group_chat_id(
         ALKORAM3NA_GROUP_USERNAME: ALKORAM3NA_GROUP_CHAT_ID,
         "alkora": ALKORAM3NA_GROUP_CHAT_ID,
         "الكورة_معنا": ALKORAM3NA_GROUP_CHAT_ID,
-        KM3NA_GROUP_USERNAME: KM3NA_GROUP_CHAT_ID,
-        "k_m3na_groub": KM3NA_GROUP_CHAT_ID,
-        "k m3na groub": KM3NA_GROUP_CHAT_ID,
-        "k_m3na": KM3NA_GROUP_CHAT_ID,
-        KM3NA_INVITE_SLUG: KM3NA_GROUP_CHAT_ID,
     }
     configured = env_ids.get(key, "")
     if configured.lstrip("-").isdigit():
@@ -1781,7 +1774,7 @@ async def set_group_points_command(
     points: int
 
     if len(context.args) == 2:
-        group_ref = KM3NA_GROUP_USERNAME
+        group_ref = ALKORAM3NA_GROUP_USERNAME
         user_ref = context.args[0]
         try:
             points = int(context.args[1])
@@ -1823,12 +1816,7 @@ async def set_group_points_command(
         )
         return
 
-    from group_standings import ROSTER_GROUP_CHAT_ID
-
-    if chat_id == ROSTER_GROUP_CHAT_ID:
-        db.set_group_manual_points_for_total(chat_id, target.id, points)
-    else:
-        db.set_group_manual_points(chat_id, target.id, points)
+    db.set_group_manual_points(chat_id, target.id, points)
     from prediction_persistence import clear_groups_cleared_flag
 
     clear_groups_cleared_flag()

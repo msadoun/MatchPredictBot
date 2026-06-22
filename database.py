@@ -253,8 +253,6 @@ def _migrate_group_manual_points(conn: sqlite3.Connection) -> None:
 
 def _migrate_global_manual_points(conn: sqlite3.Connection) -> None:
     """Copy per-group manual points to chat_id=0 so totals match across groups."""
-    from group_standings import ROSTER_GROUP_CHAT_ID
-
     rows = conn.execute(
         """
         SELECT user_id, chat_id, points FROM group_manual_points
@@ -269,11 +267,8 @@ def _migrate_global_manual_points(conn: sqlite3.Connection) -> None:
     by_user: dict[int, int] = {}
     for row in rows:
         user_id = int(row["user_id"])
-        chat_id = int(row["chat_id"])
         points = int(row["points"])
-        if chat_id == ROSTER_GROUP_CHAT_ID:
-            by_user[user_id] = points
-        elif user_id not in by_user:
+        if user_id not in by_user:
             by_user[user_id] = points
 
     now = datetime.utcnow().isoformat()
@@ -467,9 +462,9 @@ def ensure_user_ref(user_ref: str) -> User | None:
     user = resolve_user_ref(user_ref)
     if user:
         return user
-    from group_standings import resolve_roster_user
+    from group_standings import resolve_excel_user
 
-    user = resolve_roster_user(user_ref)
+    user = resolve_excel_user(user_ref)
     if user:
         return user
     ref = user_ref.strip().lstrip("@")
@@ -543,20 +538,14 @@ def bulk_set_group_manual_points(
     standings: list[tuple[str, int]],
 ) -> tuple[list[str], list[str]]:
     """Apply manual points. Returns (applied lines, not_found refs)."""
-    from group_standings import ROSTER_GROUP_CHAT_ID
-
     applied: list[str] = []
     not_found: list[str] = []
-    use_totals = chat_id == ROSTER_GROUP_CHAT_ID
     for user_ref, points in standings:
         user = ensure_user_ref(user_ref)
         if not user:
             not_found.append(user_ref)
             continue
-        if use_totals:
-            set_group_manual_points_for_total(chat_id, user.id, points)
-        else:
-            set_group_manual_points(chat_id, user.id, points)
+        set_group_manual_points(chat_id, user.id, points)
         label = user.display_name
         if user.username:
             label += f" (@{user.username})"
@@ -609,6 +598,28 @@ def reset_all_user_points() -> dict[str, int]:
         "users_zeroed": len(user_ids),
         "prediction_scores_cleared": pred_cleared,
     }
+
+
+def purge_legacy_km3na_group() -> int:
+    """Remove leftover K m3na group memberships from the database."""
+    from group_standings import LEGACY_KM3NA_GROUP_CHAT_ID
+
+    chat_id = LEGACY_KM3NA_GROUP_CHAT_ID
+    with get_db() as conn:
+        removed = conn.execute(
+            "DELETE FROM group_members WHERE chat_id = ?",
+            (chat_id,),
+        ).rowcount
+        conn.execute(
+            """
+            UPDATE users SET active_group_chat_id = NULL
+            WHERE active_group_chat_id = ?
+            """,
+            (chat_id,),
+        )
+    if removed:
+        logger.info("Purged %d legacy K m3na group membership(s)", removed)
+    return removed
 
 
 def clear_all_groups() -> dict[str, int]:
@@ -1372,74 +1383,9 @@ def ensure_auto_users_in_configured_groups() -> int:
     return len(chat_ids)
 
 
-def ensure_excel_roster_group_members() -> int:
-    """Register Excel roster users in ROSTER_GROUP_CHAT_ID (does not reset their points)."""
-    from group_standings import (
-        EXCEL_ALWAYS_INCLUDE_USERS,
-        ROSTER_GROUP_CHAT_ID,
-        resolve_roster_user,
-    )
-
-    registered = 0
-    for ref in EXCEL_ALWAYS_INCLUDE_USERS:
-        user = resolve_roster_user(ref)
-        if not user and ref.strip().lstrip("@").lower() == "m2usab":
-            user = ensure_auto_point_user()
-        if not user:
-            logger.warning("Roster user not found, skipping group registration: %s", ref)
-            continue
-
-        register_group_member(ROSTER_GROUP_CHAT_ID, user.id)
-        registered += 1
-
-    if registered:
-        logger.info(
-            "Registered %d roster user(s) in group %s",
-            registered,
-            ROSTER_GROUP_CHAT_ID,
-        )
-    return registered
-
-
-def apply_roster_group_standings(*, force: bool = False) -> int:
-    """Apply K m3na target totals as base points (only once unless force=True)."""
-    from group_standings import (
-        EXCEL_ALWAYS_INCLUDE_USERS,
-        ROSTER_GROUP_CHAT_ID,
-        resolve_roster_user,
-        roster_manual_points,
-    )
-
-    applied = 0
-    for ref in EXCEL_ALWAYS_INCLUDE_USERS:
-        user = resolve_roster_user(ref)
-        if not user and ref.strip().lstrip("@").lower() == "m2usab":
-            user = ensure_auto_point_user()
-        if not user:
-            continue
-
-        target = roster_manual_points(ref)
-        if target is None:
-            continue
-
-        if not force and get_group_manual_points(GLOBAL_MANUAL_POINTS_CHAT_ID, user.id) is not None:
-            continue
-
-        set_group_manual_points_for_total(ROSTER_GROUP_CHAT_ID, user.id, target)
-        applied += 1
-
-    if applied:
-        logger.info("Applied roster standings for %d user(s) in group %s", applied, ROSTER_GROUP_CHAT_ID)
-    return applied
-
-
 def refresh_group_auto_points(chat_id: int) -> None:
     """Re-apply auto base points for every member when showing a group leaderboard."""
-    from group_standings import ROSTER_GROUP_CHAT_ID
-
     ensure_auto_users_in_configured_groups()
-    if chat_id == ROSTER_GROUP_CHAT_ID:
-        ensure_excel_roster_group_members()
     with get_db() as conn:
         rows = conn.execute(
             "SELECT user_id FROM group_members WHERE chat_id = ?",
@@ -1477,9 +1423,7 @@ def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
 
 def sync_auto_group_points() -> int:
     """Apply auto points for all known group members (e.g. @M2usab)."""
-    updated = ensure_excel_roster_group_members()
-    updated += apply_roster_group_standings(force=False)
-    updated += ensure_auto_users_in_configured_groups()
+    updated = ensure_auto_users_in_configured_groups()
     with get_db() as conn:
         rows = conn.execute(
             """

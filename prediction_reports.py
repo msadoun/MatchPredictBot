@@ -113,9 +113,9 @@ def scope_label(scope_type: str, scope_key: str) -> str:
 
 
 def _resolve_excel_roster_user(ref: str):
-    from group_standings import resolve_roster_user
+    from group_standings import resolve_excel_user
 
-    return resolve_roster_user(ref)
+    return resolve_excel_user(ref)
 
 
 def _resolve_always_include_users(

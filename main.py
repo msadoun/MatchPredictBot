@@ -10,6 +10,7 @@ from database import (
     count_matches,
     ensure_world_cup_seeded,
     init_db,
+    purge_legacy_km3na_group,
     score_all_finished_matches,
     sync_auto_group_points,
     sync_match_open_flags,
@@ -135,6 +136,9 @@ def main() -> None:
 
     prepare_database_before_init()
     init_db()
+    purged = purge_legacy_km3na_group()
+    if purged:
+        logger.info("Removed %d legacy K m3na group membership(s)", purged)
     persistence = run_startup_persistence()
     if persistence["recovered"] or persistence["merged"]:
         logger.info(
@@ -178,7 +182,7 @@ def main() -> None:
     if not should_skip_data_recovery() and not should_skip_group_sync():
         auto_points = sync_auto_group_points()
         if auto_points:
-            logger.info("Synced group points / roster for %d member(s)", auto_points)
+            logger.info("Synced auto group points for %d member(s)", auto_points)
     seed_result = ensure_world_cup_seeded()
     if seed_result["added"]:
         logger.info("Seeded %d World Cup matches on startup", seed_result["added"])

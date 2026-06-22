@@ -7,7 +7,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from config import ALKORAM3NA_GROUP_CHAT_ID, DATABASE_PATH, KM3NA_GROUP_CHAT_ID
+from config import ALKORAM3NA_GROUP_CHAT_ID, DATABASE_PATH
 from database import (
     bulk_set_group_manual_points,
     get_db,
@@ -21,7 +21,6 @@ from database import (
 )
 from group_standings import (
     ALKORAM3NA_GROUP_USERNAME,
-    KM3NA_GROUP_USERNAME,
     PREDEFINED_GROUP_STANDINGS,
 )
 from prediction_reports import EXCEL_HEADERS, EXPORTS_DIR
@@ -125,7 +124,6 @@ def apply_predefined_group_standings() -> tuple[int, int]:
     missing_total = 0
     groups = [
         (ALKORAM3NA_GROUP_CHAT_ID, ALKORAM3NA_GROUP_USERNAME),
-        (KM3NA_GROUP_CHAT_ID, KM3NA_GROUP_USERNAME),
     ]
     for chat_id_raw, group_key in groups:
         if not chat_id_raw.lstrip("-").isdigit():
