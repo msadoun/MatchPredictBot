@@ -211,6 +211,7 @@ def main() -> None:
     app.add_handler(CommandHandler("backuppredictions", backup_predictions_command))
     app.add_handler(CommandHandler("restorepredictions", restore_predictions_command))
     app.add_handler(CommandHandler("clearuserdata", clear_userdata_command))
+    app.add_handler(CommandHandler("resetall", clear_userdata_command))
     app.add_handler(CommandHandler("importexcel", import_excel_command))
     app.add_handler(CommandHandler("syncscores", sync_scores_command))
     app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))

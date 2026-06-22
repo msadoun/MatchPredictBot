@@ -1479,31 +1479,55 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
 
 def clear_users_and_groups_data() -> dict[str, int]:
     """Delete all users, groups, predictions, and manual points. Keeps matches."""
+    return _wipe_bot_tables(include_matches=False)
+
+
+def reset_all_bot_data() -> dict[str, int]:
+    """Delete users, groups, predictions, matches, and export records."""
+    return _wipe_bot_tables(include_matches=True)
+
+
+def _wipe_bot_tables(*, include_matches: bool) -> dict[str, int]:
     try:
         from prediction_backup import backup_predictions
+        from prediction_persistence import backup_database_file
 
         backup_predictions(force=True)
+        backup_database_file()
     except Exception as exc:
-        logger.warning("Pre-clear backup skipped: %s", exc)
+        logger.warning("Pre-reset backup skipped: %s", exc)
 
-    tables = (
+    tables = [
         "prediction_drafts",
         "predictions",
         "group_manual_points",
         "group_members",
+        "prediction_exports",
         "users",
-    )
+    ]
+    if include_matches:
+        tables.append("matches")
+
     removed: dict[str, int] = {}
     with get_db() as conn:
         for table in tables:
-            removed[table] = int(
-                conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            )
+            try:
+                removed[table] = int(
+                    conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                )
+            except sqlite3.OperationalError:
+                removed[table] = 0
         conn.execute("DELETE FROM prediction_drafts")
         conn.execute("DELETE FROM predictions")
         conn.execute("DELETE FROM group_manual_points")
         conn.execute("DELETE FROM group_members")
+        try:
+            conn.execute("DELETE FROM prediction_exports")
+        except sqlite3.OperationalError:
+            pass
         conn.execute("DELETE FROM users")
+        if include_matches:
+            conn.execute("DELETE FROM matches")
 
     try:
         from prediction_persistence import mark_intentional_userdata_clear
@@ -1513,9 +1537,11 @@ def clear_users_and_groups_data() -> dict[str, int]:
         logger.warning("Could not mark intentional userdata clear: %s", exc)
 
     logger.warning(
-        "Cleared user/group data: %d users, %d predictions",
+        "Bot data reset (matches=%s): %d users, %d predictions, %d matches",
+        include_matches,
         removed.get("users", 0),
         removed.get("predictions", 0),
+        removed.get("matches", 0),
     )
     return removed
 

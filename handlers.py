@@ -1848,7 +1848,10 @@ async def clear_userdata_command(
         )
         return
 
-    removed = db.clear_users_and_groups_data()
+    removed = db.reset_all_bot_data()
+    seed = db.seed_world_cup_matches()
+    db.backfill_match_kickoff_times()
+    db.sync_match_open_flags()
     await reply_to_user(
         update,
         context,
@@ -1857,6 +1860,8 @@ async def clear_userdata_command(
             predictions=removed.get("predictions", 0),
             group_members=removed.get("group_members", 0),
             manual_points=removed.get("group_manual_points", 0),
+            matches=removed.get("matches", 0),
+            seeded=seed["added"],
         ),
         bot_username=BOT_USERNAME,
     )
