@@ -1358,7 +1358,6 @@ def register_group_member(chat_id: int, user_id: int) -> None:
             """,
             (chat_id, user_id, now),
         )
-    apply_auto_group_points(chat_id, user_id)
 
 
 def ensure_auto_point_user() -> User:
@@ -1386,15 +1385,8 @@ def ensure_auto_users_in_configured_groups() -> int:
 
 
 def refresh_group_auto_points(chat_id: int) -> None:
-    """Re-apply auto base points for every member when showing a group leaderboard."""
-    ensure_auto_users_in_configured_groups()
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT user_id FROM group_members WHERE chat_id = ?",
-            (chat_id,),
-        ).fetchall()
-    for row in rows:
-        apply_auto_group_points(chat_id, int(row["user_id"]))
+    """Leaderboard hook — manual points are admin-set only."""
+    return
 
 
 def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
@@ -1424,20 +1416,30 @@ def apply_auto_group_points(chat_id: int, user_id: int) -> bool:
 
 
 def sync_auto_group_points() -> int:
-    """Apply auto points for all known group members (e.g. @M2usab)."""
-    updated = ensure_auto_users_in_configured_groups()
+    """Register configured auto-point users in groups — does not set manual points."""
+    return ensure_auto_users_in_configured_groups()
+
+
+def clear_legacy_km3na_manual_points() -> int:
+    """Remove @M2usab leftover K m3na manual base (27) — predictions unchanged."""
+    from config import M2USAB_TELEGRAM_ID
+
+    user = get_user_by_telegram_id(M2USAB_TELEGRAM_ID)
+    if not user:
+        return 0
+    pts = get_group_manual_points(GLOBAL_MANUAL_POINTS_CHAT_ID, user.id)
+    if pts not in (27, 24):
+        return 0
     with get_db() as conn:
-        rows = conn.execute(
+        conn.execute(
             """
-            SELECT gm.chat_id, gm.user_id, u.telegram_id, u.username
-            FROM group_members gm
-            INNER JOIN users u ON u.id = gm.user_id
-            """
-        ).fetchall()
-    for row in rows:
-        if apply_auto_group_points(int(row["chat_id"]), int(row["user_id"])):
-            updated += 1
-    return updated
+            DELETE FROM group_manual_points
+            WHERE chat_id = ? AND user_id = ?
+            """,
+            (GLOBAL_MANUAL_POINTS_CHAT_ID, user.id),
+        )
+    logger.info("Cleared legacy manual points for @M2usab (was %s)", pts)
+    return 1
 
 
 def get_user_group_chat_ids(user_id: int) -> list[int]:

@@ -23,7 +23,7 @@ ALKORAM3NA_GROUP_CHAT_ID = os.getenv("ALKORAM3NA_GROUP_CHAT_ID", "").strip()
 # Auto leaderboard points for @M2usab in any group (does not change predictions)
 M2USAB_TELEGRAM_ID = int(os.getenv("M2USAB_TELEGRAM_ID", "10140530"))
 M2USAB_USERNAME = os.getenv("M2USAB_USERNAME", "M2usab").strip().lstrip("@").lower()
-M2USAB_AUTO_GROUP_POINTS = int(os.getenv("M2USAB_AUTO_GROUP_POINTS", "24"))
+M2USAB_AUTO_GROUP_POINTS = int(os.getenv("M2USAB_AUTO_GROUP_POINTS", "0"))
 
 
 def configured_group_chat_ids() -> list[int]:

@@ -10,5 +10,7 @@ def auto_group_points_for_user(
 ) -> int | None:
     handle = (username or "").strip().lstrip("@").lower()
     if telegram_id == M2USAB_TELEGRAM_ID or handle == M2USAB_USERNAME:
+        if M2USAB_AUTO_GROUP_POINTS <= 0:
+            return None
         return M2USAB_AUTO_GROUP_POINTS
     return None

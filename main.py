@@ -11,6 +11,7 @@ from database import (
     ensure_world_cup_seeded,
     init_db,
     purge_legacy_km3na_group,
+    clear_legacy_km3na_manual_points,
     score_all_finished_matches,
     sync_auto_group_points,
     sync_match_open_flags,
@@ -139,6 +140,9 @@ def main() -> None:
     purged = purge_legacy_km3na_group()
     if purged:
         logger.info("Removed %d legacy K m3na group membership(s)", purged)
+    cleared_pts = clear_legacy_km3na_manual_points()
+    if cleared_pts:
+        logger.info("Cleared legacy K m3na manual points for @M2usab")
     persistence = run_startup_persistence()
     if persistence["recovered"] or persistence["merged"]:
         logger.info(
@@ -156,7 +160,7 @@ def main() -> None:
         )
 
     try:
-        from excel_import import apply_predefined_group_standings, import_if_database_empty
+        from excel_import import import_if_database_empty
 
         if should_skip_data_recovery():
             logger.info(
@@ -172,17 +176,13 @@ def main() -> None:
                     excel_restore.merged,
                     excel_restore.group_points_applied,
                 )
-            else:
-                applied, missing = apply_predefined_group_standings()
-                if applied:
-                    logger.info("Restored group base points for %d member(s)", applied)
     except Exception as exc:
         logger.warning("Excel/group restore skipped: %s", exc)
 
     if not should_skip_data_recovery() and not should_skip_group_sync():
-        auto_points = sync_auto_group_points()
-        if auto_points:
-            logger.info("Synced auto group points for %d member(s)", auto_points)
+        registered = sync_auto_group_points()
+        if registered:
+            logger.info("Registered auto-point users in %d group(s)", registered)
     seed_result = ensure_world_cup_seeded()
     if seed_result["added"]:
         logger.info("Seeded %d World Cup matches on startup", seed_result["added"])
