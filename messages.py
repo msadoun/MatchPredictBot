@@ -11,6 +11,7 @@ POINTS_SHORT = "نقطة"
 PREDICTIONS = "توقعات"
 
 START_TEXT = "مرحباً بك في بوت توقعات كأس العالم! ⚽\n\nاختر من الأزرار أدناه:"
+MENU_USE_BUTTONS = "👇 استخدم الأزرار بالأسفل للتنقل"
 
 BTN_MATCHES = "📅 مباريات اليوم"
 BTN_PREDICT = "⚽ توقع مباراة"

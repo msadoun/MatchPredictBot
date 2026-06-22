@@ -1,6 +1,6 @@
-from telegram import InlineKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ChatType
-from telegram.error import Forbidden
+from telegram.error import BadRequest, Forbidden
 from telegram.ext import ContextTypes
 
 import messages as msg
@@ -11,10 +11,14 @@ def is_group_chat(update: Update) -> bool:
     return bool(chat and chat.type in {ChatType.GROUP, ChatType.SUPERGROUP})
 
 
-def _private_markup(reply_markup) -> ReplyKeyboardRemove | InlineKeyboardMarkup | None:
-    if isinstance(reply_markup, InlineKeyboardMarkup):
+def _private_markup(
+    reply_markup,
+) -> ReplyKeyboardRemove | ReplyKeyboardMarkup | InlineKeyboardMarkup | None:
+    if isinstance(reply_markup, (InlineKeyboardMarkup, ReplyKeyboardMarkup)):
         return reply_markup
-    return ReplyKeyboardRemove()
+    if isinstance(reply_markup, ReplyKeyboardRemove):
+        return reply_markup
+    return None
 
 
 async def _notify_dm_required(update: Update, bot_username: str) -> None:
@@ -87,8 +91,27 @@ async def edit_or_send_user(
         return False
 
     if query.message.chat.type == ChatType.PRIVATE:
-        await query.edit_message_text(text, reply_markup=reply_markup)
-        return True
+        try:
+            await query.edit_message_text(text, reply_markup=reply_markup)
+            return True
+        except BadRequest as exc:
+            err = str(exc).lower()
+            if "message is not modified" in err and reply_markup is not None:
+                try:
+                    await query.edit_message_reply_markup(reply_markup=reply_markup)
+                    return True
+                except BadRequest:
+                    pass
+        try:
+            await context.bot.send_message(
+                chat_id=user.id,
+                text=text,
+                reply_markup=reply_markup,
+            )
+            return True
+        except Forbidden:
+            await _notify_dm_required(update, bot_username)
+            return False
     try:
         await context.bot.send_message(
             chat_id=user.id,

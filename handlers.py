@@ -2,7 +2,7 @@ from datetime import datetime
 import re
 from pathlib import Path
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 import database as db
@@ -24,6 +24,17 @@ def is_admin(user_id: int) -> bool:
 
 
 BOT_USERNAME = "FTM3naBot"
+
+
+def main_menu_reply_keyboard(*, show_admin: bool = False) -> ReplyKeyboardMarkup:
+    rows = [
+        [KeyboardButton(msg.BTN_MATCHES), KeyboardButton(msg.BTN_PREDICT)],
+        [KeyboardButton(msg.BTN_MY_PREDICTIONS), KeyboardButton(msg.BTN_LEADERBOARD)],
+        [KeyboardButton(msg.BTN_CANCEL), KeyboardButton(msg.BTN_HELP)],
+    ]
+    if show_admin:
+        rows.append([KeyboardButton(msg.BTN_ADMIN_PREDICTIONS)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 
 def main_menu_keyboard(*, show_admin: bool = False) -> InlineKeyboardMarkup:
@@ -61,10 +72,49 @@ def _main_menu_back_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([_main_menu_back_row()])
 
 
-def _append_main_menu_back(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup:
+def _prepend_main_menu_back(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup:
     rows = [list(row) for row in markup.inline_keyboard] if markup else []
-    rows.append(_main_menu_back_row())
-    return InlineKeyboardMarkup(rows)
+    if any(btn.callback_data == "menu:main" for row in rows for btn in row):
+        return markup if markup else _main_menu_back_markup()
+    return InlineKeyboardMarkup([_main_menu_back_row()] + rows)
+
+
+def _append_main_menu_back(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup:
+    return _prepend_main_menu_back(markup)
+
+
+def _ensure_back_button(
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None,
+    *,
+    skip: bool = False,
+) -> InlineKeyboardMarkup | None:
+    if skip or text.strip() == msg.START_TEXT.strip():
+        return reply_markup
+    if reply_markup is not None and not isinstance(reply_markup, InlineKeyboardMarkup):
+        return reply_markup
+    return _prepend_main_menu_back(reply_markup)
+
+
+async def _activate_reply_menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    show_admin: bool = False,
+) -> None:
+    if is_group_chat(update):
+        return
+    chat = update.effective_chat
+    if not chat:
+        return
+    if context.user_data.get("reply_menu_active"):
+        return
+    await context.bot.send_message(
+        chat.id,
+        msg.MENU_USE_BUTTONS,
+        reply_markup=main_menu_reply_keyboard(show_admin=show_admin),
+    )
+    context.user_data["reply_menu_active"] = True
 
 
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -72,14 +122,48 @@ async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     participant = None
     if user:
         participant = db.get_user_by_telegram_id(user.id)
+    show_admin = is_admin(user.id) if user else False
     _clear_prediction_state(context, participant.id if participant else None)
-    await user_response(
+
+    if update.callback_query and not is_group_chat(update):
+        await user_response(
+            update,
+            context,
+            msg.START_TEXT,
+            reply_markup=main_menu_keyboard(show_admin=show_admin),
+            skip_back_button=True,
+            bot_username=BOT_USERNAME,
+        )
+        await _activate_reply_menu(update, context, show_admin=show_admin)
+        context.user_data["reply_menu_active"] = True
+        return
+
+    await reply_to_user(
         update,
         context,
         msg.START_TEXT,
-        reply_markup=main_menu_keyboard(
-            show_admin=is_admin(user.id) if user else False
-        ),
+        reply_markup=main_menu_reply_keyboard(show_admin=show_admin),
+        bot_username=BOT_USERNAME,
+    )
+    context.user_data["reply_menu_active"] = True
+
+
+async def menu_screen_response(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    *,
+    drop_reply_keyboard: bool = False,
+) -> bool:
+    """Reply or edit with a back-to-main-menu button (menu flows)."""
+    return await user_response(
+        update,
+        context,
+        text,
+        reply_markup=reply_markup,
+        bot_username=BOT_USERNAME,
+        drop_reply_keyboard=drop_reply_keyboard,
     )
 
 
@@ -269,7 +353,7 @@ async def _show_group_leaderboard_picker(
 ) -> None:
     groups = db.get_user_group_chat_ids(participant.id)
     if not groups:
-        await user_response(update, context, msg.LEADERBOARD_PRIVATE_ONLY)
+        await menu_screen_response(update, context, msg.LEADERBOARD_PRIVATE_ONLY)
         return
     active = db.get_user_active_group(participant.id) or groups[0]
     keyboard = await _group_picker_keyboard(
@@ -279,7 +363,7 @@ async def _show_group_leaderboard_picker(
         select_callback="lb:group",
     )
     if keyboard is None:
-        await user_response(update, context, msg.LEADERBOARD_PRIVATE_ONLY)
+        await menu_screen_response(update, context, msg.LEADERBOARD_PRIVATE_ONLY)
         return
     await user_response(
         update,
@@ -381,7 +465,12 @@ async def user_response(
     *,
     bot_username: str = BOT_USERNAME,
     drop_reply_keyboard: bool = False,
+    skip_back_button: bool = False,
 ) -> bool:
+    if isinstance(reply_markup, InlineKeyboardMarkup) or reply_markup is None:
+        reply_markup = _ensure_back_button(
+            text, reply_markup, skip=skip_back_button
+        )
     if update.callback_query and not is_group_chat(update):
         return await edit_or_send_user(
             update, context, text, reply_markup, bot_username=bot_username
@@ -402,6 +491,11 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     await query.answer()
+    user = update.effective_user
+    show_admin = is_admin(user.id) if user else False
+    if query.data != "menu:main":
+        await _activate_reply_menu(update, context, show_admin=show_admin)
+
     action = query.data.split(":", 1)[1] if ":" in query.data else ""
 
     if action == "matches":
@@ -446,8 +540,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         context,
         msg.START_TEXT,
         reply_markup=main_menu_keyboard(show_admin=is_admin(user.id)),
-        drop_reply_keyboard=True,
+        skip_back_button=True,
+        bot_username=BOT_USERNAME,
     )
+    await _activate_reply_menu(update, context, show_admin=is_admin(user.id))
+    context.user_data["reply_menu_active"] = True
 
 
 async def group_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -500,7 +597,7 @@ async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             header = msg.OPEN_MATCHES_HEADER.format(date=on_date)
 
     if not matches:
-        await user_response(
+        await menu_screen_response(
             update,
             context,
             msg.NO_OPEN_MATCHES if not context.args else msg.NO_MATCHES_DATE.format(date=on_date),
@@ -510,7 +607,7 @@ async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     lines = [header] + [format_match(match) for match in matches]
     if total > len(matches):
         lines.append(msg.SHOWING_MATCHES.format(shown=len(matches), total=total))
-    await user_response(update, context, "\n\n".join(lines))
+    await menu_screen_response(update, context, "\n\n".join(lines))
 
 
 def _track_group_member(update: Update, participant: db.User) -> None:
@@ -733,10 +830,10 @@ async def _prompt_score_text(
 def _winner_keyboard(match_id: int, home_team: str, away_team: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
+            _main_menu_back_row(),
             [InlineKeyboardButton(home_team, callback_data=f"pred:pick:{match_id}:home")],
             [InlineKeyboardButton(msg.DRAW, callback_data=f"pred:pick:{match_id}:draw")],
             [InlineKeyboardButton(away_team, callback_data=f"pred:pick:{match_id}:away")],
-            _main_menu_back_row(),
         ]
     )
 
@@ -746,7 +843,7 @@ def _match_picker_keyboard(
     user_id: int | None = None,
 ) -> InlineKeyboardMarkup:
     open_matches = [m for m in matches if db.match_accepts_predictions(m)]
-    rows = []
+    rows = [_main_menu_back_row()]
     for match in open_matches:
         prefix = "✓ " if user_id and db.user_has_prediction(user_id, match.id) else ""
         rows.append(
@@ -757,7 +854,6 @@ def _match_picker_keyboard(
                 )
             ]
         )
-    rows.append(_main_menu_back_row())
     return InlineKeyboardMarkup(rows)
 
 
@@ -771,8 +867,6 @@ def _predictable_matches(limit: int = 25) -> tuple[list[db.Match], str]:
 async def _show_match_picker(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    *,
-    edit: bool = False,
 ) -> None:
     matches, prompt = _predictable_matches()
     participant = None
@@ -783,17 +877,12 @@ async def _show_match_picker(
 
     if not matches:
         text = msg.NO_OPEN_MATCHES
-        markup = _main_menu_back_markup()
+        markup = None
     else:
         text = f"{prompt}\n\n{msg.PREDICTION_ONCE_NOTE}"
         markup = _match_picker_keyboard(matches, user_id=user_db_id)
 
-    if edit and update.callback_query:
-        await edit_or_send_user(
-            update, context, text, markup, bot_username=BOT_USERNAME
-        )
-    else:
-        await user_response(update, context, text, reply_markup=markup)
+    await menu_screen_response(update, context, text, markup)
 
 
 async def _prompt_winner_pick(
@@ -906,15 +995,10 @@ async def predict_cancel_command(update: Update, context: ContextTypes.DEFAULT_T
     if context.user_data.get("prediction_step") != "entering_score" and participant:
         if not _load_prediction_draft(context, participant.id):
             _clear_prediction_state(context, user_id)
-            await user_response(
-                update,
-                context,
-                msg.START_TEXT,
-                reply_markup=main_menu_keyboard(),
-            )
+            await _show_main_menu(update, context)
             return
     _clear_prediction_state(context, user_id)
-    await user_response(update, context, msg.PREDICTION_CANCELLED)
+    await menu_screen_response(update, context, msg.PREDICTION_CANCELLED)
 
 
 async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -936,7 +1020,11 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if parts[1] == "cancel":
         _clear_prediction_state(context, user_db_id)
         await edit_or_send_user(
-            update, context, msg.PREDICTION_CANCELLED, bot_username=BOT_USERNAME
+            update,
+            context,
+            msg.PREDICTION_CANCELLED,
+            _main_menu_back_markup(),
+            bot_username=BOT_USERNAME,
         )
         return
 
@@ -948,7 +1036,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         match = db.get_match(match_id)
         if not match or not db.match_accepts_predictions(match):
-            await _show_match_picker(update, context, edit=True)
+            await _show_match_picker(update, context)
             return
 
         await _prompt_winner_pick(update, context, match, edit=True)
@@ -967,7 +1055,11 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         match = db.get_match(match_id)
         if not match or not db.match_accepts_predictions(match):
             await edit_or_send_user(
-                update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
+                update,
+                context,
+                msg.MATCH_NO_LONGER_OPEN,
+                _main_menu_back_markup(),
+                bot_username=BOT_USERNAME,
             )
             _clear_prediction_state(context, user_db_id)
             return
@@ -977,7 +1069,11 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             result = _scores_from_pick(pick, pending[0], pending[1])
             if isinstance(result, str):
                 await edit_or_send_user(
-                    update, context, f"{result}\n{msg.SEND_CANCEL}", bot_username=BOT_USERNAME
+                    update,
+                    context,
+                    f"{result}\n{msg.SEND_CANCEL}",
+                    _main_menu_back_markup(),
+                    bot_username=BOT_USERNAME,
                 )
                 return
             home_score, away_score = result
@@ -1065,7 +1161,7 @@ async def my_predictions_command(
     db.recalculate_all_prediction_points()
     predictions = db.get_user_predictions(participant.id)
     if not predictions:
-        await user_response(update, context, msg.NO_PREDICTIONS)
+        await menu_screen_response(update, context, msg.NO_PREDICTIONS)
         return
 
     lines = [msg.YOUR_PREDICTIONS, msg.SCORING_RULES]
@@ -1081,7 +1177,7 @@ async def my_predictions_command(
             line += f"\n   {msg.POINTS_PENDING}"
         lines.append(line)
 
-    await user_response(update, context, "\n\n".join(lines))
+    await menu_screen_response(update, context, "\n\n".join(lines))
 
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1111,31 +1207,63 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
-STALE_KEYBOARD_LABELS = {
-    "⚽ توقع",
-    "📅 المباريات",
-    "🏆 المتصدرين",
-    "📋 توقعاتي",
-    "توقع",
-    "المباريات",
-    "المتصدرين",
-    "توقعاتي",
+REPLY_MENU_ACTIONS: dict[str, str] = {
+    msg.BTN_MATCHES: "matches",
+    msg.BTN_PREDICT: "predict",
+    msg.BTN_MY_PREDICTIONS: "mypredictions",
+    msg.BTN_LEADERBOARD: "leaderboard",
+    msg.BTN_CANCEL: "cancel",
+    msg.BTN_HELP: "help",
+    msg.BTN_BACK_MENU: "main",
+    msg.BTN_ADMIN_PREDICTIONS: "adminpredictions",
+    "⚽ توقع": "predict",
+    "📅 المباريات": "matches",
+    "🏆 المتصدرين": "leaderboard",
+    "📋 توقعاتي": "mypredictions",
 }
 
 
-async def stale_keyboard_handler(
+async def reply_menu_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     if is_group_chat(update):
         return
     if not update.message or not update.message.text:
         return
-    if update.message.text.strip() not in STALE_KEYBOARD_LABELS:
-        return
-    if context.user_data.get("prediction_step") == "entering_score":
+
+    text = update.message.text.strip()
+    action = REPLY_MENU_ACTIONS.get(text)
+    if not action:
         return
 
-    await start_command(update, context)
+    if (
+        context.user_data.get("prediction_step") == "entering_score"
+        and action not in {"cancel", "main"}
+    ):
+        return
+
+    user = update.effective_user
+    if user:
+        participant = db.get_user_by_telegram_id(user.id)
+        if participant and action in {"matches", "predict", "mypredictions", "leaderboard", "help", "main"}:
+            _clear_prediction_state(context, participant.id)
+
+    if action == "matches":
+        await matches_command(update, context)
+    elif action == "predict":
+        await predict_command(update, context)
+    elif action == "cancel":
+        await predict_cancel_command(update, context)
+    elif action == "mypredictions":
+        await my_predictions_command(update, context)
+    elif action == "leaderboard":
+        await leaderboard_command(update, context)
+    elif action == "help":
+        await start_command(update, context)
+    elif action == "main":
+        await _show_main_menu(update, context)
+    elif action == "adminpredictions":
+        await admin_predictions_command(update, context)
 
 
 async def add_match_command(

@@ -45,7 +45,7 @@ from handlers import (
     set_prediction_command,
     set_result_command,
     sync_scores_command,
-    stale_keyboard_handler,
+    reply_menu_handler,
     start_command,
 )
 
@@ -246,7 +246,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(admin_predictions_callback, pattern=r"^adminpred:"))
     app.add_handler(CallbackQueryHandler(predict_callback, pattern=r"^pred:"))
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, stale_keyboard_handler),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, reply_menu_handler),
         group=0,
     )
     app.add_handler(
