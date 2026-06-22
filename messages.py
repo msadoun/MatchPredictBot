@@ -19,6 +19,8 @@ BTN_MY_PREDICTIONS = "📋 توقعاتي"
 BTN_LEADERBOARD = "🏆 المتصدرين"
 BTN_HELP = "❓ المساعدة"
 BTN_BACK_MENU = "↩️ القائمة الرئيسية"
+BTN_BACK_MATCHES = "↩️ اختيار مباراة أخرى"
+BTN_BACK_WINNER = "↩️ تغيير الفائز"
 
 GROUP_WELCOME = (
     "أهلاً بالجميع! أنا بوت توقعات كأس العالم 2026 ⚽\n\n"

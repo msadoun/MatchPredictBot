@@ -57,6 +57,18 @@ def _main_menu_back_row() -> list[InlineKeyboardButton]:
     return [InlineKeyboardButton(msg.BTN_BACK_MENU, callback_data="menu:main")]
 
 
+def _match_picker_back_row() -> list[InlineKeyboardButton]:
+    return [InlineKeyboardButton(msg.BTN_BACK_MATCHES, callback_data="pred:back:matches")]
+
+
+def _winner_back_row(match_id: int) -> list[InlineKeyboardButton]:
+    return [
+        InlineKeyboardButton(
+            msg.BTN_BACK_WINNER, callback_data=f"pred:back:winner:{match_id}"
+        )
+    ]
+
+
 def _main_menu_back_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([_main_menu_back_row()])
 
@@ -789,7 +801,21 @@ async def _prompt_score_text(
         )
 
     await edit_or_send_user(
-        update, context, text, _main_menu_back_markup(), bot_username=BOT_USERNAME
+        update,
+        context,
+        text,
+        _score_step_keyboard(match.id),
+        bot_username=BOT_USERNAME,
+    )
+
+
+def _score_step_keyboard(match_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            _main_menu_back_row(),
+            _match_picker_back_row(),
+            _winner_back_row(match_id),
+        ]
     )
 
 
@@ -797,6 +823,7 @@ def _winner_keyboard(match_id: int, home_team: str, away_team: str) -> InlineKey
     return InlineKeyboardMarkup(
         [
             _main_menu_back_row(),
+            _match_picker_back_row(),
             [InlineKeyboardButton(home_team, callback_data=f"pred:pick:{match_id}:home")],
             [InlineKeyboardButton(msg.DRAW, callback_data=f"pred:pick:{match_id}:draw")],
             [InlineKeyboardButton(away_team, callback_data=f"pred:pick:{match_id}:away")],
@@ -855,8 +882,6 @@ async def _prompt_winner_pick(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     match: db.Match,
-    *,
-    edit: bool = False,
 ) -> None:
     text = (
         msg.MATCH_HEADER.format(
@@ -865,7 +890,7 @@ async def _prompt_winner_pick(
         + f"\n\n{msg.WHO_WINS}"
     )
     keyboard = _winner_keyboard(match.id, match.home_team, match.away_team)
-    if edit and update.callback_query:
+    if update.callback_query and not is_group_chat(update):
         await edit_or_send_user(
             update, context, text, keyboard, bot_username=BOT_USERNAME
         )
@@ -980,7 +1005,28 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     participant = _ensure_participant(update)
     user_db_id = participant.id if participant else None
     parts = query.data.split(":")
-    if len(parts) < 3 or parts[0] != "pred":
+    if not parts or parts[0] != "pred":
+        return
+
+    if parts[1] == "back":
+        if len(parts) == 3 and parts[2] == "matches":
+            _clear_prediction_state(context, user_db_id)
+            await _show_match_picker(update, context)
+            return
+        if len(parts) == 4 and parts[2] == "winner":
+            try:
+                match_id = int(parts[3])
+            except ValueError:
+                return
+            _clear_prediction_state(context, user_db_id)
+            match = db.get_match(match_id)
+            if not match or not db.match_accepts_predictions(match):
+                await _show_match_picker(update, context)
+                return
+            await _prompt_winner_pick(update, context, match)
+            return
+
+    if len(parts) < 3:
         return
 
     if parts[1] == "cancel":
@@ -1005,7 +1051,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await _show_match_picker(update, context)
             return
 
-        await _prompt_winner_pick(update, context, match, edit=True)
+        await _prompt_winner_pick(update, context, match)
         return
 
     if parts[1] == "pick" and len(parts) == 4:
