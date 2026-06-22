@@ -220,19 +220,20 @@ SETGROUPPOINTS_NOTE = (
 )
 
 CLEAR_USERDATA_DONE = (
-    "تم إعادة ضبط البوت بالكامل.\n"
+    "تمت إعادة ضبط البوت كأول تشغيل.\n"
     "• مستخدمون: {users}\n"
     "• توقعات: {predictions}\n"
     "• أعضاء مجموعات: {group_members}\n"
     "• نقاط يدوية: {manual_points}\n"
-    "• مباريات: {matches}\n\n"
-    "تمت إعادة تحميل مباريات كأس العالم ({seeded} مباراة).\n"
-    "ملفات Excel القديمة على الخادم لم تُحذف. "
-    "لاسترجاع التوقعات: /restorepredictions"
+    "• مباريات محذوفة: {matches}\n"
+    "• مباريات جديدة: {seeded}\n\n"
+    "لا مستخدمين ولا توقعات. شغّل /setgrouppoints load km3na عند الحاجة.\n"
+    "لاسترجاع نسخة قديمة: /restorepredictions"
 )
 CLEAR_USERDATA_USAGE = "الاستخدام: /clearuserdata confirm"
 CLEAR_USERDATA_CONFIRM = (
-    "⚠️ سيتم حذف كل شيء: المستخدمين، المجموعات، التوقعات، والمباريات.\n"
+    "⚠️ إعادة ضبط كاملة كأول تشغيل:\n"
+    "حذف المستخدمين، المجموعات، التوقعات، والمباريات ثم تحميل مباريات كأس العالم من جديد.\n"
     "أرسل: /clearuserdata confirm"
 )
 

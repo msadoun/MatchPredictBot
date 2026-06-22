@@ -123,12 +123,15 @@ def main() -> None:
         logger.error("TELEGRAM_BOT_TOKEN is not set. Copy .env.example to .env and fill it in.")
         sys.exit(1)
 
-    from prediction_persistence import prepare_database_before_init
+    from prediction_persistence import (
+        consume_factory_reset_pending,
+        prepare_database_before_init,
+        run_startup_persistence,
+        should_skip_data_recovery,
+    )
 
     prepare_database_before_init()
     init_db()
-    from prediction_persistence import run_startup_persistence
-
     persistence = run_startup_persistence()
     if persistence["recovered"] or persistence["merged"]:
         logger.info(
@@ -148,23 +151,29 @@ def main() -> None:
     try:
         from excel_import import apply_predefined_group_standings, import_if_database_empty
 
-        excel_restore = import_if_database_empty()
-        if excel_restore:
+        if should_skip_data_recovery():
             logger.info(
-                "Excel restore on startup: merged=%d group_pts=%d",
-                excel_restore.merged,
-                excel_restore.group_points_applied,
+                "Factory reset — skipping Excel import and auto group standings."
             )
         else:
-            applied, missing = apply_predefined_group_standings()
-            if applied:
-                logger.info("Restored group base points for %d member(s)", applied)
+            excel_restore = import_if_database_empty()
+            if excel_restore:
+                logger.info(
+                    "Excel restore on startup: merged=%d group_pts=%d",
+                    excel_restore.merged,
+                    excel_restore.group_points_applied,
+                )
+            else:
+                applied, missing = apply_predefined_group_standings()
+                if applied:
+                    logger.info("Restored group base points for %d member(s)", applied)
     except Exception as exc:
         logger.warning("Excel/group restore skipped: %s", exc)
 
-    auto_points = sync_auto_group_points()
-    if auto_points:
-        logger.info("Synced group points / roster for %d member(s)", auto_points)
+    if not should_skip_data_recovery():
+        auto_points = sync_auto_group_points()
+        if auto_points:
+            logger.info("Synced group points / roster for %d member(s)", auto_points)
     seed_result = ensure_world_cup_seeded()
     if seed_result["added"]:
         logger.info("Seeded %d World Cup matches on startup", seed_result["added"])
@@ -190,6 +199,9 @@ def main() -> None:
             logger.info("Applied %d missing prediction backfill(s)", backfilled)
     logger.info("%d matches open for predictions", count_matches(open_only=True))
 
+    if consume_factory_reset_pending():
+        logger.info("Factory reset complete — bot is in fresh-launch state.")
+
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start_command))
@@ -212,6 +224,7 @@ def main() -> None:
     app.add_handler(CommandHandler("restorepredictions", restore_predictions_command))
     app.add_handler(CommandHandler("clearuserdata", clear_userdata_command))
     app.add_handler(CommandHandler("resetall", clear_userdata_command))
+    app.add_handler(CommandHandler("factoryreset", clear_userdata_command))
     app.add_handler(CommandHandler("importexcel", import_excel_command))
     app.add_handler(CommandHandler("syncscores", sync_scores_command))
     app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))

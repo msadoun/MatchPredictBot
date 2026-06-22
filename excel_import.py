@@ -247,6 +247,10 @@ def import_all_excel_sources(*, include_exports: bool = True) -> ExcelImportResu
 
 def import_if_database_empty() -> ExcelImportResult | None:
     from prediction_backup import count_predictions
+    from prediction_persistence import should_skip_data_recovery
+
+    if should_skip_data_recovery():
+        return None
 
     if count_predictions() > 0:
         return None

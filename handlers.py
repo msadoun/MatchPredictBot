@@ -1848,20 +1848,18 @@ async def clear_userdata_command(
         )
         return
 
-    removed = db.reset_all_bot_data()
-    seed = db.seed_world_cup_matches()
-    db.backfill_match_kickoff_times()
-    db.sync_match_open_flags()
+    result = db.factory_reset_to_fresh_launch()
+    seeded = int(result.get("seeded", 0) or 0)
     await reply_to_user(
         update,
         context,
         msg.CLEAR_USERDATA_DONE.format(
-            users=removed.get("users", 0),
-            predictions=removed.get("predictions", 0),
-            group_members=removed.get("group_members", 0),
-            manual_points=removed.get("group_manual_points", 0),
-            matches=removed.get("matches", 0),
-            seeded=seed["added"],
+            users=int(result.get("users", 0) or 0),
+            predictions=int(result.get("predictions", 0) or 0),
+            group_members=int(result.get("group_members", 0) or 0),
+            manual_points=int(result.get("group_manual_points", 0) or 0),
+            matches=int(result.get("matches", 0) or 0),
+            seeded=seeded,
         ),
         bot_username=BOT_USERNAME,
     )
@@ -1882,7 +1880,7 @@ async def restore_predictions_command(
     from prediction_backup import best_backup_path, restore_predictions_from_file
     from prediction_persistence import (
         ARCHIVE_PATH,
-        clear_intentional_userdata_clear,
+        clear_factory_reset_pending,
         restore_from_archive,
         update_highwater_mark,
     )
@@ -1926,7 +1924,7 @@ async def restore_predictions_command(
             restored += merged
 
     update_highwater_mark()
-    clear_intentional_userdata_clear()
+    clear_factory_reset_pending()
     if restored == 0 and not doc and not best_backup_path() and not ARCHIVE_PATH.is_file():
         await reply_to_user(
             update,

@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 DATA_DIR = DATABASE_PATH.parent
 ARCHIVE_PATH = DATA_DIR / "predictions_archive.jsonl"
 HIGHWATER_PATH = DATA_DIR / "prediction_highwater.json"
-INTENTIONAL_CLEAR_PATH = DATA_DIR / "userdata_cleared.flag"
+FACTORY_RESET_PATH = DATA_DIR / "factory_reset.flag"
+INTENTIONAL_CLEAR_PATH = FACTORY_RESET_PATH  # legacy alias
 DB_BACKUPS_DIR = DATA_DIR / "db_backups"
 MAX_DB_BACKUPS = 30
 
@@ -22,25 +23,42 @@ def _ensure_dirs() -> None:
     DB_BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def mark_intentional_userdata_clear() -> None:
-    """Prevent startup recovery from re-importing users/predictions after admin wipe."""
+def mark_factory_reset_pending() -> None:
+    """Fresh-launch state: skip backup recovery and auto-import on next startup."""
     _ensure_dirs()
-    INTENTIONAL_CLEAR_PATH.write_text(
-        json.dumps({"cleared_at": datetime.utcnow().isoformat()}, ensure_ascii=False),
+    FACTORY_RESET_PATH.write_text(
+        json.dumps({"reset_at": datetime.utcnow().isoformat()}, ensure_ascii=False),
         encoding="utf-8",
     )
-    HIGHWATER_PATH.write_text(
-        json.dumps({"max_predictions": 0, "updated_at": datetime.utcnow().isoformat()}),
-        encoding="utf-8",
-    )
+    HIGHWATER_PATH.unlink(missing_ok=True)
+    ARCHIVE_PATH.unlink(missing_ok=True)
+
+
+def clear_factory_reset_pending() -> None:
+    FACTORY_RESET_PATH.unlink(missing_ok=True)
+
+
+def consume_factory_reset_pending() -> bool:
+    if FACTORY_RESET_PATH.is_file():
+        FACTORY_RESET_PATH.unlink(missing_ok=True)
+        return True
+    return False
+
+
+def should_skip_data_recovery() -> bool:
+    return FACTORY_RESET_PATH.is_file()
+
+
+def mark_intentional_userdata_clear() -> None:
+    mark_factory_reset_pending()
 
 
 def clear_intentional_userdata_clear() -> None:
-    INTENTIONAL_CLEAR_PATH.unlink(missing_ok=True)
+    clear_factory_reset_pending()
 
 
 def should_skip_prediction_recovery() -> bool:
-    return INTENTIONAL_CLEAR_PATH.is_file()
+    return should_skip_data_recovery()
 
 
 def count_predictions() -> int:

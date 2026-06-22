@@ -1487,6 +1487,25 @@ def reset_all_bot_data() -> dict[str, int]:
     return _wipe_bot_tables(include_matches=True)
 
 
+def factory_reset_to_fresh_launch() -> dict[str, int | str]:
+    """Reset to first-launch state: empty users, fresh matches, no recovery/import."""
+    removed = _wipe_bot_tables(include_matches=True)
+    try:
+        from prediction_persistence import mark_factory_reset_pending
+
+        mark_factory_reset_pending()
+    except Exception as exc:
+        logger.warning("Could not mark factory reset: %s", exc)
+
+    seed = seed_world_cup_matches()
+    backfill_match_kickoff_times()
+    sync_match_open_flags()
+    return {
+        **removed,
+        "seeded": seed["added"],
+    }
+
+
 def _wipe_bot_tables(*, include_matches: bool) -> dict[str, int]:
     try:
         from prediction_backup import backup_predictions
@@ -1528,13 +1547,6 @@ def _wipe_bot_tables(*, include_matches: bool) -> dict[str, int]:
         conn.execute("DELETE FROM users")
         if include_matches:
             conn.execute("DELETE FROM matches")
-
-    try:
-        from prediction_persistence import mark_intentional_userdata_clear
-
-        mark_intentional_userdata_clear()
-    except Exception as exc:
-        logger.warning("Could not mark intentional userdata clear: %s", exc)
 
     logger.warning(
         "Bot data reset (matches=%s): %d users, %d predictions, %d matches",
