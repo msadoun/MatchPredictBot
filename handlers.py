@@ -2,7 +2,7 @@ from datetime import datetime
 import re
 from pathlib import Path
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import ContextTypes
 
 import database as db
@@ -24,17 +24,6 @@ def is_admin(user_id: int) -> bool:
 
 
 BOT_USERNAME = "FTM3naBot"
-
-
-def main_menu_reply_keyboard(*, show_admin: bool = False) -> ReplyKeyboardMarkup:
-    rows = [
-        [KeyboardButton(msg.BTN_MATCHES), KeyboardButton(msg.BTN_PREDICT)],
-        [KeyboardButton(msg.BTN_MY_PREDICTIONS), KeyboardButton(msg.BTN_LEADERBOARD)],
-        [KeyboardButton(msg.BTN_CANCEL), KeyboardButton(msg.BTN_HELP)],
-    ]
-    if show_admin:
-        rows.append([KeyboardButton(msg.BTN_ADMIN_PREDICTIONS)])
-    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 
 def main_menu_keyboard(*, show_admin: bool = False) -> InlineKeyboardMarkup:
@@ -96,25 +85,21 @@ def _ensure_back_button(
     return _prepend_main_menu_back(reply_markup)
 
 
-async def _activate_reply_menu(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    show_admin: bool = False,
+async def _clear_reply_keyboard(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     if is_group_chat(update):
         return
     chat = update.effective_chat
     if not chat:
         return
-    if context.user_data.get("reply_menu_active"):
-        return
-    await context.bot.send_message(
-        chat.id,
-        msg.MENU_USE_BUTTONS,
-        reply_markup=main_menu_reply_keyboard(show_admin=show_admin),
-    )
-    context.user_data["reply_menu_active"] = True
+    try:
+        removal = await context.bot.send_message(
+            chat.id, "\u200b", reply_markup=ReplyKeyboardRemove()
+        )
+        await removal.delete()
+    except Exception:
+        pass
 
 
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -124,28 +109,15 @@ async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         participant = db.get_user_by_telegram_id(user.id)
     show_admin = is_admin(user.id) if user else False
     _clear_prediction_state(context, participant.id if participant else None)
-
-    if update.callback_query and not is_group_chat(update):
-        await user_response(
-            update,
-            context,
-            msg.START_TEXT,
-            reply_markup=main_menu_keyboard(show_admin=show_admin),
-            skip_back_button=True,
-            bot_username=BOT_USERNAME,
-        )
-        await _activate_reply_menu(update, context, show_admin=show_admin)
-        context.user_data["reply_menu_active"] = True
-        return
-
-    await reply_to_user(
+    await _clear_reply_keyboard(update, context)
+    await user_response(
         update,
         context,
         msg.START_TEXT,
-        reply_markup=main_menu_reply_keyboard(show_admin=show_admin),
+        reply_markup=main_menu_keyboard(show_admin=show_admin),
+        skip_back_button=True,
         bot_username=BOT_USERNAME,
     )
-    context.user_data["reply_menu_active"] = True
 
 
 async def menu_screen_response(
@@ -491,11 +463,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     await query.answer()
-    user = update.effective_user
-    show_admin = is_admin(user.id) if user else False
-    if query.data != "menu:main":
-        await _activate_reply_menu(update, context, show_admin=show_admin)
-
     action = query.data.split(":", 1)[1] if ":" in query.data else ""
 
     if action == "matches":
@@ -535,6 +502,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     participant = db.upsert_user(user.id, user.username, display_name)
     _track_group_member(update, participant)
 
+    await _clear_reply_keyboard(update, context)
     await user_response(
         update,
         context,
@@ -543,8 +511,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         skip_back_button=True,
         bot_username=BOT_USERNAME,
     )
-    await _activate_reply_menu(update, context, show_admin=is_admin(user.id))
-    context.user_data["reply_menu_active"] = True
 
 
 async def group_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1207,63 +1173,39 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
-REPLY_MENU_ACTIONS: dict[str, str] = {
-    msg.BTN_MATCHES: "matches",
-    msg.BTN_PREDICT: "predict",
-    msg.BTN_MY_PREDICTIONS: "mypredictions",
-    msg.BTN_LEADERBOARD: "leaderboard",
-    msg.BTN_CANCEL: "cancel",
-    msg.BTN_HELP: "help",
-    msg.BTN_BACK_MENU: "main",
-    msg.BTN_ADMIN_PREDICTIONS: "adminpredictions",
-    "⚽ توقع": "predict",
-    "📅 المباريات": "matches",
-    "🏆 المتصدرين": "leaderboard",
-    "📋 توقعاتي": "mypredictions",
+STALE_KEYBOARD_LABELS = {
+    "⚽ توقع",
+    "📅 المباريات",
+    "🏆 المتصدرين",
+    "📋 توقعاتي",
+    "توقع",
+    "المباريات",
+    "المتصدرين",
+    "توقعاتي",
+    msg.BTN_MATCHES,
+    msg.BTN_PREDICT,
+    msg.BTN_MY_PREDICTIONS,
+    msg.BTN_LEADERBOARD,
+    msg.BTN_CANCEL,
+    msg.BTN_HELP,
+    msg.BTN_BACK_MENU,
+    msg.BTN_ADMIN_PREDICTIONS,
 }
 
 
-async def reply_menu_handler(
+async def stale_keyboard_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     if is_group_chat(update):
         return
     if not update.message or not update.message.text:
         return
-
-    text = update.message.text.strip()
-    action = REPLY_MENU_ACTIONS.get(text)
-    if not action:
+    if update.message.text.strip() not in STALE_KEYBOARD_LABELS:
+        return
+    if context.user_data.get("prediction_step") == "entering_score":
         return
 
-    if (
-        context.user_data.get("prediction_step") == "entering_score"
-        and action not in {"cancel", "main"}
-    ):
-        return
-
-    user = update.effective_user
-    if user:
-        participant = db.get_user_by_telegram_id(user.id)
-        if participant and action in {"matches", "predict", "mypredictions", "leaderboard", "help", "main"}:
-            _clear_prediction_state(context, participant.id)
-
-    if action == "matches":
-        await matches_command(update, context)
-    elif action == "predict":
-        await predict_command(update, context)
-    elif action == "cancel":
-        await predict_cancel_command(update, context)
-    elif action == "mypredictions":
-        await my_predictions_command(update, context)
-    elif action == "leaderboard":
-        await leaderboard_command(update, context)
-    elif action == "help":
-        await start_command(update, context)
-    elif action == "main":
-        await _show_main_menu(update, context)
-    elif action == "adminpredictions":
-        await admin_predictions_command(update, context)
+    await start_command(update, context)
 
 
 async def add_match_command(
