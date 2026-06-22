@@ -646,6 +646,15 @@ def _load_prediction_draft(
     return True
 
 
+def _prediction_saved_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            _main_menu_back_row(),
+            [InlineKeyboardButton(msg.BTN_PREDICT, callback_data="menu:predict")],
+        ]
+    )
+
+
 async def _finalize_prediction(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -717,7 +726,7 @@ async def _finalize_prediction(
         outcome = away_team
 
     template = msg.PREDICTION_UPDATED if was_update else msg.PREDICTION_SAVED
-    await reply_to_user(
+    await user_response(
         update,
         context,
         template.format(
@@ -727,6 +736,8 @@ async def _finalize_prediction(
             outcome=outcome,
             score=f"{home_score}-{away_score}",
         ),
+        reply_markup=_prediction_saved_keyboard(),
+        skip_back_button=True,
         bot_username=BOT_USERNAME,
     )
     return True
