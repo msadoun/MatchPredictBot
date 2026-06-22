@@ -560,6 +560,53 @@ def bulk_set_group_manual_points(
     return applied, not_found
 
 
+def reset_all_user_points() -> dict[str, int]:
+    """Zero manual base points and clear match scores. Keeps users and predictions."""
+    from group_standings import EXCEL_ALWAYS_INCLUDE_USERS
+
+    now = datetime.utcnow().isoformat()
+    user_ids: set[int] = set()
+    with get_db() as conn:
+        for row in conn.execute("SELECT id FROM users"):
+            user_ids.add(int(row[0]))
+        for row in conn.execute("SELECT DISTINCT user_id FROM predictions"):
+            user_ids.add(int(row[0]))
+        for row in conn.execute("SELECT DISTINCT user_id FROM group_members"):
+            user_ids.add(int(row[0]))
+        pred_cleared = conn.execute(
+            "UPDATE predictions SET points = NULL WHERE points IS NOT NULL"
+        ).rowcount
+        conn.execute("DELETE FROM group_manual_points")
+
+    for ref in EXCEL_ALWAYS_INCLUDE_USERS:
+        user = ensure_user_ref(ref)
+        if user:
+            user_ids.add(user.id)
+
+    with get_db() as conn:
+        for uid in user_ids:
+            conn.execute(
+                """
+                INSERT INTO group_manual_points (chat_id, user_id, points, updated_at)
+                VALUES (?, ?, 0, ?)
+                ON CONFLICT(chat_id, user_id) DO UPDATE SET
+                    points = 0,
+                    updated_at = excluded.updated_at
+                """,
+                (GLOBAL_MANUAL_POINTS_CHAT_ID, uid, now),
+            )
+
+    logger.info(
+        "Reset all user points: %d users, %d prediction scores cleared",
+        len(user_ids),
+        pred_cleared,
+    )
+    return {
+        "users_zeroed": len(user_ids),
+        "prediction_scores_cleared": pred_cleared,
+    }
+
+
 def list_matches(
     open_only: bool = False,
     limit: int | None = None,

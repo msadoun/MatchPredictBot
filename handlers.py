@@ -1851,6 +1851,36 @@ async def backup_predictions_command(
     )
 
 
+async def reset_points_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if not context.args or context.args[0].lower() != "confirm":
+        await reply_to_user(
+            update, context, msg.RESET_POINTS_CONFIRM, bot_username=BOT_USERNAME
+        )
+        return
+
+    result = db.reset_all_user_points()
+    await reply_to_user(
+        update,
+        context,
+        msg.RESET_POINTS_DONE.format(
+            users_zeroed=int(result.get("users_zeroed", 0) or 0),
+            prediction_scores_cleared=int(
+                result.get("prediction_scores_cleared", 0) or 0
+            ),
+        ),
+        bot_username=BOT_USERNAME,
+    )
+
+
 async def clear_userdata_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:

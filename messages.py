@@ -235,6 +235,20 @@ CLEAR_USERDATA_DONE = (
     "لا مستخدمين ولا توقعات. شغّل /setgrouppoints load km3na عند الحاجة.\n"
     "لاسترجاع نسخة قديمة: /restorepredictions"
 )
+RESET_POINTS_DONE = (
+    "تم تصفير نقاط الجميع.\n"
+    "• مستخدمون: {users_zeroed}\n"
+    "• توقعات مُصفّرة: {prediction_scores_cleared}\n\n"
+    "التوقعات نفسها باقية. لتحميل نقاط K m3na: /setgrouppoints load km3na"
+)
+RESET_POINTS_CONFIRM = (
+    "⚠️ تصفير نقاط الجميع إلى صفر:\n"
+    "• النقاط اليدوية (الأساسية)\n"
+    "• نقاط التوقعات من المباريات\n\n"
+    "المستخدمون والتوقعات لا يُحذفون.\n"
+    "أرسل: /resetpoints confirm"
+)
+
 CLEAR_USERDATA_USAGE = "الاستخدام: /clearuserdata confirm"
 CLEAR_USERDATA_CONFIRM = (
     "⚠️ إعادة ضبط كاملة كأول تشغيل:\n"
