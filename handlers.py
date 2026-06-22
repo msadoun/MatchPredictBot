@@ -507,17 +507,6 @@ def _group_chat_id(update: Update) -> int:
     return 0
 
 
-MAX_SCORE_DIGIT = 9
-
-
-def _is_picking_score(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    return context.user_data.get("prediction_step") in {
-        "picking_home_score",
-        "picking_away_score",
-        "entering_score",
-    }
-
-
 def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE, user_id: int | None = None) -> None:
     for key in (
         "prediction_step",
@@ -526,7 +515,6 @@ def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE, user_id: int | N
         "prediction_home_team",
         "prediction_away_team",
         "prediction_prompt_id",
-        "prediction_home_score",
         "pending_score_pair",
     ):
         context.user_data.pop(key, None)
@@ -540,7 +528,7 @@ def _load_prediction_draft(
     draft = db.get_prediction_draft(user_id)
     if not draft:
         return False
-    context.user_data["prediction_step"] = "picking_home_score"
+    context.user_data["prediction_step"] = "entering_score"
     context.user_data["prediction_match_id"] = draft.match_id
     context.user_data["prediction_pick"] = draft.pick
     context.user_data["prediction_home_team"] = draft.home_team
@@ -662,37 +650,17 @@ def _scores_from_pick(
     return low, high
 
 
-def _digit_score_keyboard(side: str, match_id: int) -> InlineKeyboardMarkup:
-    """Build 0-9 buttons for home (hg) or away (ag) goals."""
-    rows = []
-    for start in (0, 5):
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    str(digit),
-                    callback_data=f"pred:{side}:{match_id}:{digit}",
-                )
-                for digit in range(start, min(start + 5, MAX_SCORE_DIGIT + 1))
-            ]
-        )
-    rows.append(
-        [InlineKeyboardButton(msg.BTN_CANCEL, callback_data="pred:cancel")]
-    )
-    return InlineKeyboardMarkup(rows)
-
-
-async def _prompt_home_score_picker(
+async def _prompt_score_text(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     match: db.Match,
     pick: str,
 ) -> None:
-    context.user_data["prediction_step"] = "picking_home_score"
+    context.user_data["prediction_step"] = "entering_score"
     context.user_data["prediction_match_id"] = match.id
     context.user_data["prediction_pick"] = pick
     context.user_data["prediction_home_team"] = match.home_team
     context.user_data["prediction_away_team"] = match.away_team
-    context.user_data.pop("prediction_home_score", None)
 
     participant = _ensure_participant(update)
     if participant:
@@ -705,7 +673,7 @@ async def _prompt_home_score_picker(
         )
 
     if pick == "draw":
-        text = msg.PICK_DRAW_SCORE.format(
+        text = msg.PICK_DRAW_PROMPT.format(
             id=match.id,
             home=match.home_team,
             vs=msg.VS,
@@ -713,39 +681,16 @@ async def _prompt_home_score_picker(
             draw=msg.DRAW,
         )
     else:
-        text = msg.PICK_HOME_SCORE.format(
+        winner = match.home_team if pick == "home" else match.away_team
+        text = msg.PICK_WINNER_PROMPT.format(
             id=match.id,
             home=match.home_team,
             vs=msg.VS,
             away=match.away_team,
+            winner=winner,
         )
 
-    keyboard = _digit_score_keyboard("hg", match.id)
-    await edit_or_send_user(
-        update, context, text, keyboard, bot_username=BOT_USERNAME
-    )
-
-
-async def _prompt_away_score_picker(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    match: db.Match,
-    home_score: int,
-) -> None:
-    context.user_data["prediction_step"] = "picking_away_score"
-    context.user_data["prediction_home_score"] = home_score
-
-    text = msg.PICK_AWAY_SCORE.format(
-        id=match.id,
-        home=match.home_team,
-        vs=msg.VS,
-        away=match.away_team,
-        home_score=home_score,
-    )
-    keyboard = _digit_score_keyboard("ag", match.id)
-    await edit_or_send_user(
-        update, context, text, keyboard, bot_username=BOT_USERNAME
-    )
+    await edit_or_send_user(update, context, text, bot_username=BOT_USERNAME)
 
 
 def _winner_keyboard(match_id: int, home_team: str, away_team: str) -> InlineKeyboardMarkup:
@@ -919,7 +864,7 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def predict_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     participant = _ensure_participant(update)
     user_id = participant.id if participant else None
-    if not _is_picking_score(context) and participant:
+    if context.user_data.get("prediction_step") != "entering_score" and participant:
         if not _load_prediction_draft(context, participant.id):
             _clear_prediction_state(context, user_id)
             await user_response(
@@ -1010,79 +955,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             )
             return
 
-        await _prompt_home_score_picker(update, context, match, pick)
-        return
-
-    if parts[1] in {"hg", "ag"} and len(parts) == 4:
-        try:
-            match_id = int(parts[2])
-            score = int(parts[3])
-        except ValueError:
-            return
-        if score < 0 or score > MAX_SCORE_DIGIT:
-            return
-
-        match = db.get_match(match_id)
-        if not match or not db.match_accepts_predictions(match):
-            await edit_or_send_user(
-                update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
-            )
-            _clear_prediction_state(context, user_db_id)
-            return
-
-        pick = context.user_data.get("prediction_pick")
-        if not pick:
-            return
-
-        participant = db.get_user_by_telegram_id(user.id)
-        if not participant:
-            return
-
-        if parts[1] == "hg":
-            if pick == "draw":
-                await _finalize_prediction(
-                    update,
-                    context,
-                    participant,
-                    match_id,
-                    score,
-                    score,
-                )
-                return
-            await _prompt_away_score_picker(update, context, match, score)
-            return
-
-        home_score = context.user_data.get("prediction_home_score")
-        if home_score is None:
-            return
-        away_score = score
-        if pick == "home" and home_score <= away_score:
-            await edit_or_send_user(
-                update,
-                context,
-                f"{msg.UNEAQUAL_SCORES_FOR_WINNER}\n{msg.USE_SCORE_BUTTONS}",
-                _digit_score_keyboard("ag", match_id),
-                bot_username=BOT_USERNAME,
-            )
-            return
-        if pick == "away" and away_score <= home_score:
-            await edit_or_send_user(
-                update,
-                context,
-                f"{msg.UNEAQUAL_SCORES_FOR_WINNER}\n{msg.USE_SCORE_BUTTONS}",
-                _digit_score_keyboard("ag", match_id),
-                bot_username=BOT_USERNAME,
-            )
-            return
-        await _finalize_prediction(
-            update,
-            context,
-            participant,
-            match_id,
-            int(home_score),
-            away_score,
-        )
-        return
+        await _prompt_score_text(update, context, match, pick)
 
 
 async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1095,11 +968,6 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
     if not participant:
         return
 
-    if _is_picking_score(context):
-        await reply_to_user(
-            update, context, msg.USE_SCORE_BUTTONS, bot_username=BOT_USERNAME
-        )
-        return
     if context.user_data.get("prediction_step") != "entering_score":
         if not _load_prediction_draft(context, participant.id):
             return
@@ -1225,7 +1093,7 @@ async def stale_keyboard_handler(
         return
     if update.message.text.strip() not in STALE_KEYBOARD_LABELS:
         return
-    if _is_picking_score(context):
+    if context.user_data.get("prediction_step") == "entering_score":
         return
 
     await start_command(update, context)
