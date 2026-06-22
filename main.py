@@ -220,6 +220,7 @@ def main() -> None:
     app.add_handler(CommandHandler("closematch", close_match_command))
     app.add_handler(CommandHandler("openmatch", open_match_command))
     app.add_handler(CommandHandler("setgrouppoints", set_group_points_command))
+    app.add_handler(CommandHandler("setpoints", set_group_points_command))
     app.add_handler(CommandHandler("backuppredictions", backup_predictions_command))
     app.add_handler(CommandHandler("restorepredictions", restore_predictions_command))
     app.add_handler(CommandHandler("clearuserdata", clear_userdata_command))

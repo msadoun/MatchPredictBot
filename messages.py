@@ -199,8 +199,13 @@ SETGROUPPOINTS_USAGE = (
     "• /setgrouppoints load alkoram3na — الكورة معنا\n"
     "• /setgrouppoints load km3na — K m3na groub\n"
     "• /setgrouppoints <مجموعة> <مستخدم> <نقاط>\n"
-    "مثال: /setgrouppoints km3na M2usab 24\n"
-    "يمكن تشغيل load من داخل المجموعة مباشرة."
+    "• /setpoints <مستخدم> <نقاط> — K m3na (بدون مجموعة)\n"
+    "مثال: /setpoints M2usab 27\n"
+    "مثال: /setpoints 10140530 27 — برقم تيليجرام حتى بدون /start"
+)
+SETGROUPPOINTS_USER_NOT_FOUND = (
+    "المستخدم غير موجود. اطلب منه /start للبوت، "
+    "أو استخدم رقم تيليجرام: /setpoints <telegram_id> <نقاط>"
 )
 SETGROUPPOINTS_LOAD_DONE = (
     "تم تعيين نقاط المجموعة «{group}».\n\n"

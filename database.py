@@ -458,6 +458,22 @@ def resolve_user_ref(user_ref: str) -> User | None:
     return None
 
 
+def ensure_user_ref(user_ref: str) -> User | None:
+    """Resolve user for admin points — creates a row from Telegram ID if needed."""
+    user = resolve_user_ref(user_ref)
+    if user:
+        return user
+    from group_standings import resolve_roster_user
+
+    user = resolve_roster_user(user_ref)
+    if user:
+        return user
+    ref = user_ref.strip().lstrip("@")
+    if ref.isdigit():
+        return upsert_user(int(ref), None, ref)
+    return None
+
+
 def set_global_manual_points(user_id: int, points: int) -> None:
     now = datetime.utcnow().isoformat()
     with get_db() as conn:
@@ -529,7 +545,7 @@ def bulk_set_group_manual_points(
     not_found: list[str] = []
     use_totals = chat_id == ROSTER_GROUP_CHAT_ID
     for user_ref, points in standings:
-        user = resolve_user_ref(user_ref)
+        user = ensure_user_ref(user_ref)
         if not user:
             not_found.append(user_ref)
             continue

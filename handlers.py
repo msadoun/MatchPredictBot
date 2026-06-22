@@ -1749,19 +1749,33 @@ async def set_group_points_command(
         )
         return
 
-    if len(context.args) < 3:
+    group_ref: str
+    user_ref: str
+    points: int
+
+    if len(context.args) == 2:
+        group_ref = KM3NA_GROUP_USERNAME
+        user_ref = context.args[0]
+        try:
+            points = int(context.args[1])
+        except ValueError:
+            await reply_to_user(
+                update, context, msg.SCORES_MUST_BE_NUMBERS, bot_username=BOT_USERNAME
+            )
+            return
+    elif len(context.args) >= 3:
+        group_ref = context.args[0]
+        user_ref = context.args[1]
+        try:
+            points = int(context.args[2])
+        except ValueError:
+            await reply_to_user(
+                update, context, msg.SCORES_MUST_BE_NUMBERS, bot_username=BOT_USERNAME
+            )
+            return
+    else:
         await reply_to_user(
             update, context, msg.SETGROUPPOINTS_USAGE, bot_username=BOT_USERNAME
-        )
-        return
-
-    group_ref = context.args[0]
-    user_ref = context.args[1]
-    try:
-        points = int(context.args[2])
-    except ValueError:
-        await reply_to_user(
-            update, context, msg.SCORES_MUST_BE_NUMBERS, bot_username=BOT_USERNAME
         )
         return
 
@@ -1775,14 +1789,19 @@ async def set_group_points_command(
         )
         return
 
-    target = db.resolve_user_ref(user_ref)
+    target = db.ensure_user_ref(user_ref)
     if not target:
         await reply_to_user(
-            update, context, msg.USER_NOT_FOUND, bot_username=BOT_USERNAME
+            update, context, msg.SETGROUPPOINTS_USER_NOT_FOUND, bot_username=BOT_USERNAME
         )
         return
 
-    db.set_group_manual_points(chat_id, target.id, points)
+    from group_standings import ROSTER_GROUP_CHAT_ID
+
+    if chat_id == ROSTER_GROUP_CHAT_ID:
+        db.set_group_manual_points_for_total(chat_id, target.id, points)
+    else:
+        db.set_group_manual_points(chat_id, target.id, points)
     group_label = group_ref.lstrip("@")
     name = target.display_name
     if target.username:
