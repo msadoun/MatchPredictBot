@@ -131,7 +131,13 @@ LEADERBOARD_TITLE = "🏆 لوحة متصدرين كأس العالم 2026\n"
 LEADERBOARD_TITLE_GROUP = "🏆 لوحة متصدرين المجموعة\n"
 LEADERBOARD_TITLE_GROUP_NAMED = "🏆 لوحة متصدرين: {group}\n"
 CHOOSE_GROUP_LEADERBOARD = "اختر مجموعة لعرض لوحة المتصدرين:"
+CHOOSE_ACTIVE_GROUP = "اختر المجموعة النشطة:"
+BTN_CHANGE_GROUP = "🔄 تغيير المجموعة"
 BTN_SWITCH_GROUP = "🔄 تغيير المجموعة"
+GROUP_SWITCHED = "تم التبديل إلى: {group}"
+CURRENT_GROUP_ONLY = "المجموعة الحالية:\n{group}"
+CHANGE_GROUP_IN_PRIVATE = "افتح محادثة خاصة مع البوت لتغيير المجموعة من القائمة."
+UNKNOWN_GROUP = "مجموعة"
 LEADERBOARD_PRIVATE_ONLY = (
     "لا توجد مجموعة مرتبطة بحسابك.\n"
     "استخدم البوت من مجموعة تيليغرام أو توقع من داخل المجموعة أولاً."
@@ -140,7 +146,6 @@ LEADERBOARD_EMPTY = "لا توجد توقعات بعد. كن الأول — اس
 LEADERBOARD_ROW = "{medal} {name} — {points} نقطة"
 LEADERBOARD_TOP_N = "\nيعرض أفضل {shown} من {total} لاعب."
 YOUR_RANK = "\n📍 ترتيبك: #{rank} · {points} نقطة"
-GROUP_RANK_IN_CHAT = "📍 ترتيبك في المجموعة: #{rank} · {points} نقطة"
 
 ADMIN_ONLY = "هذا الأمر للمسؤولين فقط."
 ADDMATCH_USAGE = (

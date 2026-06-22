@@ -44,6 +44,8 @@ from handlers import (
     set_prediction_command,
     set_result_command,
     sync_scores_command,
+    change_group_command,
+    group_switch_callback,
     stale_keyboard_handler,
     start_command,
 )
@@ -63,6 +65,7 @@ async def post_init(application: Application) -> None:
             BotCommand("predict", "توقع نتيجة مباراة"),
             BotCommand("matches", "مباريات اليوم"),
             BotCommand("leaderboard", "لوحة المتصدرين"),
+            BotCommand("changegroup", "تغيير المجموعة"),
             BotCommand("mypredictions", "توقعاتك"),
             BotCommand("cancel", "إلغاء التوقع الحالي"),
             BotCommand("help", "المساعدة"),
@@ -221,6 +224,8 @@ def main() -> None:
     app.add_handler(CommandHandler("mypredictions", my_predictions_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(CommandHandler("lb", leaderboard_command))
+    app.add_handler(CommandHandler("changegroup", change_group_command))
+    app.add_handler(CommandHandler("switchgroup", change_group_command))
     app.add_handler(CommandHandler("addmatch", add_match_command))
     app.add_handler(CommandHandler("loadworldcup", load_worldcup_command))
     app.add_handler(CommandHandler("setresult", set_result_command))
@@ -243,6 +248,7 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu:"))
     app.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^lb:"))
+    app.add_handler(CallbackQueryHandler(group_switch_callback, pattern=r"^grp:"))
     app.add_handler(CallbackQueryHandler(admin_predictions_callback, pattern=r"^adminpred:"))
     app.add_handler(CallbackQueryHandler(predict_callback, pattern=r"^pred:"))
     app.add_handler(
