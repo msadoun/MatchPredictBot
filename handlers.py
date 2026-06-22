@@ -153,13 +153,9 @@ async def send_leaderboard(
     )
 
     markup = None
-    if (
-        is_group_scope
-        and not is_group_chat(update)
-        and viewer_telegram_id
-    ):
+    if is_group_scope and not is_group_chat(update) and viewer_telegram_id:
         participant = db.get_user_by_telegram_id(viewer_telegram_id)
-        if participant and len(db.get_user_group_chat_ids(participant.id)) > 1:
+        if participant and db.get_user_group_chat_ids(participant.id):
             markup = InlineKeyboardMarkup(
                 [[InlineKeyboardButton(msg.BTN_SWITCH_GROUP, callback_data="lb:pick")]]
             )
