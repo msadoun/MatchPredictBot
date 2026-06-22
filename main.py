@@ -36,6 +36,7 @@ from handlers import (
     predict_score_message,
     restore_predictions_command,
     clear_userdata_command,
+    clear_groups_command,
     reset_points_command,
     import_excel_command,
     set_group_points_command,
@@ -129,6 +130,7 @@ def main() -> None:
         prepare_database_before_init,
         run_startup_persistence,
         should_skip_data_recovery,
+        should_skip_group_sync,
     )
 
     prepare_database_before_init()
@@ -156,6 +158,8 @@ def main() -> None:
             logger.info(
                 "Factory reset — skipping Excel import and auto group standings."
             )
+        elif should_skip_group_sync():
+            logger.info("Groups cleared — skipping auto group registration.")
         else:
             excel_restore = import_if_database_empty()
             if excel_restore:
@@ -171,7 +175,7 @@ def main() -> None:
     except Exception as exc:
         logger.warning("Excel/group restore skipped: %s", exc)
 
-    if not should_skip_data_recovery():
+    if not should_skip_data_recovery() and not should_skip_group_sync():
         auto_points = sync_auto_group_points()
         if auto_points:
             logger.info("Synced group points / roster for %d member(s)", auto_points)
@@ -224,6 +228,7 @@ def main() -> None:
     app.add_handler(CommandHandler("setpoints", set_group_points_command))
     app.add_handler(CommandHandler("backuppredictions", backup_predictions_command))
     app.add_handler(CommandHandler("restorepredictions", restore_predictions_command))
+    app.add_handler(CommandHandler("cleargroups", clear_groups_command))
     app.add_handler(CommandHandler("resetpoints", reset_points_command))
     app.add_handler(CommandHandler("clearuserdata", clear_userdata_command))
     app.add_handler(CommandHandler("resetall", clear_userdata_command))

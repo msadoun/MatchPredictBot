@@ -13,6 +13,7 @@ DATA_DIR = DATABASE_PATH.parent
 ARCHIVE_PATH = DATA_DIR / "predictions_archive.jsonl"
 HIGHWATER_PATH = DATA_DIR / "prediction_highwater.json"
 FACTORY_RESET_PATH = DATA_DIR / "factory_reset.flag"
+GROUPS_CLEARED_PATH = DATA_DIR / "groups_cleared.flag"
 INTENTIONAL_CLEAR_PATH = FACTORY_RESET_PATH  # legacy alias
 DB_BACKUPS_DIR = DATA_DIR / "db_backups"
 MAX_DB_BACKUPS = 30
@@ -30,6 +31,7 @@ def mark_factory_reset_pending() -> None:
         json.dumps({"reset_at": datetime.utcnow().isoformat()}, ensure_ascii=False),
         encoding="utf-8",
     )
+    GROUPS_CLEARED_PATH.unlink(missing_ok=True)
     HIGHWATER_PATH.unlink(missing_ok=True)
     ARCHIVE_PATH.unlink(missing_ok=True)
 
@@ -47,6 +49,23 @@ def consume_factory_reset_pending() -> bool:
 
 def should_skip_data_recovery() -> bool:
     return FACTORY_RESET_PATH.is_file()
+
+
+def mark_groups_cleared() -> None:
+    """Skip auto group registration on startup until admin reloads groups."""
+    _ensure_dirs()
+    GROUPS_CLEARED_PATH.write_text(
+        json.dumps({"cleared_at": datetime.utcnow().isoformat()}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def clear_groups_cleared_flag() -> None:
+    GROUPS_CLEARED_PATH.unlink(missing_ok=True)
+
+
+def should_skip_group_sync() -> bool:
+    return GROUPS_CLEARED_PATH.is_file()
 
 
 def mark_intentional_userdata_clear() -> None:

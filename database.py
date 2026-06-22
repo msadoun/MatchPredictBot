@@ -607,6 +607,25 @@ def reset_all_user_points() -> dict[str, int]:
     }
 
 
+def clear_all_groups() -> dict[str, int]:
+    """Remove all group memberships. Keeps users, predictions, and manual points."""
+    from prediction_persistence import mark_groups_cleared
+
+    with get_db() as conn:
+        members = int(conn.execute("SELECT COUNT(*) FROM group_members").fetchone()[0])
+        conn.execute("DELETE FROM group_members")
+        active = conn.execute(
+            "UPDATE users SET active_group_chat_id = NULL WHERE active_group_chat_id IS NOT NULL"
+        ).rowcount
+
+    mark_groups_cleared()
+    logger.info("Cleared all groups: %d memberships, %d active groups", members, active)
+    return {
+        "group_members": members,
+        "active_groups_cleared": active,
+    }
+
+
 def list_matches(
     open_only: bool = False,
     limit: int | None = None,

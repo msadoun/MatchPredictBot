@@ -116,6 +116,11 @@ def _ensure_user(name: str) -> tuple[object | None, bool]:
 
 def apply_predefined_group_standings() -> tuple[int, int]:
     """Set manual base points from predefined lists — does not touch predictions."""
+    from prediction_persistence import should_skip_group_sync
+
+    if should_skip_group_sync():
+        return 0, 0
+
     applied_total = 0
     missing_total = 0
     groups = [

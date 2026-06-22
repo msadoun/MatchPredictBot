@@ -248,6 +248,21 @@ RESET_POINTS_CONFIRM = (
     "المستخدمون والتوقعات لا يُحذفون.\n"
     "أرسل: /resetpoints confirm"
 )
+CLEAR_GROUPS_DONE = (
+    "تم حذف جميع المجموعات من البيانات.\n"
+    "• عضويات مجموعات: {group_members}\n"
+    "• مجموعات نشطة للمستخدمين: {active_groups_cleared}\n\n"
+    "المستخدمون والتوقعات والنقاط باقية.\n"
+    "لإعادة تسجيل K m3na: /setgrouppoints load km3na"
+)
+CLEAR_GROUPS_CONFIRM = (
+    "⚠️ حذف جميع المجموعات من البيانات:\n"
+    "• عضويات group_members\n"
+    "• المجموعة النشطة لكل مستخدم\n\n"
+    "المستخدمون والتوقعات والنقاط لا تُحذف.\n"
+    "لن تُعاد المجموعات تلقائياً بعد إعادة التشغيل.\n"
+    "أرسل: /cleargroups confirm"
+)
 
 CLEAR_USERDATA_USAGE = "الاستخدام: /clearuserdata confirm"
 CLEAR_USERDATA_CONFIRM = (

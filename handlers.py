@@ -1725,6 +1725,9 @@ async def set_group_points_command(
             return
 
         applied, not_found = db.bulk_set_group_manual_points(chat_id, standings)
+        from prediction_persistence import clear_groups_cleared_flag
+
+        clear_groups_cleared_flag()
         lines = [
             msg.SETGROUPPOINTS_LOAD_DONE.format(
                 group=group_key,
@@ -1802,6 +1805,9 @@ async def set_group_points_command(
         db.set_group_manual_points_for_total(chat_id, target.id, points)
     else:
         db.set_group_manual_points(chat_id, target.id, points)
+    from prediction_persistence import clear_groups_cleared_flag
+
+    clear_groups_cleared_flag()
     group_label = group_ref.lstrip("@")
     name = target.display_name
     if target.username:
@@ -1846,6 +1852,34 @@ async def backup_predictions_command(
         msg.BACKUP_PREDICTIONS_DONE.format(
             count=count_predictions(),
             filename=path.name,
+        ),
+        bot_username=BOT_USERNAME,
+    )
+
+
+async def clear_groups_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if not context.args or context.args[0].lower() != "confirm":
+        await reply_to_user(
+            update, context, msg.CLEAR_GROUPS_CONFIRM, bot_username=BOT_USERNAME
+        )
+        return
+
+    result = db.clear_all_groups()
+    await reply_to_user(
+        update,
+        context,
+        msg.CLEAR_GROUPS_DONE.format(
+            group_members=int(result.get("group_members", 0) or 0),
+            active_groups_cleared=int(result.get("active_groups_cleared", 0) or 0),
         ),
         bot_username=BOT_USERNAME,
     )
