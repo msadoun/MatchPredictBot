@@ -30,6 +30,23 @@ async def _notify_dm_required(update: Update, bot_username: str) -> None:
         )
 
 
+async def reply_group_rank_in_chat(
+    update: Update,
+    *,
+    rank: int,
+    points: int,
+) -> None:
+    """Post the user's group rank in the group chat (not DM)."""
+    if not is_group_chat(update):
+        return
+    message = update.effective_message
+    if not message:
+        return
+    await message.reply_text(
+        msg.GROUP_RANK_IN_CHAT.format(rank=rank, points=points)
+    )
+
+
 async def reply_to_user(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,

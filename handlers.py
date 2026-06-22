@@ -14,7 +14,7 @@ from group_standings import (
     PREDEFINED_GROUP_STANDINGS,
     group_display_name,
 )
-from user_messaging import edit_or_send_user, is_group_chat, reply_to_user
+from user_messaging import edit_or_send_user, is_group_chat, reply_group_rank_in_chat, reply_to_user
 
 import prediction_reports as reports
 
@@ -73,6 +73,12 @@ def format_leaderboard_text(
 
     if not entries:
         lines.append(msg.LEADERBOARD_EMPTY)
+        if viewer_entry:
+            lines.append(
+                msg.YOUR_RANK.format(
+                    rank=viewer_entry.rank, points=viewer_entry.total_points
+                )
+            )
         return "\n".join(lines)
 
     for entry in entries:
@@ -145,6 +151,13 @@ async def send_leaderboard(
         group_chat=is_group_scope,
         group_name=group_name,
     )
+
+    if is_group_chat(update) and is_group_scope and viewer_entry:
+        await reply_group_rank_in_chat(
+            update,
+            rank=viewer_entry.rank,
+            points=viewer_entry.total_points,
+        )
 
     markup = None
     if (

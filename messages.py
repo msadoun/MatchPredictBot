@@ -140,6 +140,7 @@ LEADERBOARD_EMPTY = "لا توجد توقعات بعد. كن الأول — اس
 LEADERBOARD_ROW = "{medal} {name} — {points} نقطة"
 LEADERBOARD_TOP_N = "\nيعرض أفضل {shown} من {total} لاعب."
 YOUR_RANK = "\n📍 ترتيبك: #{rank} · {points} نقطة"
+GROUP_RANK_IN_CHAT = "📍 ترتيبك في المجموعة: #{rank} · {points} نقطة"
 
 ADMIN_ONLY = "هذا الأمر للمسؤولين فقط."
 ADDMATCH_USAGE = (
