@@ -983,15 +983,25 @@ def set_match_result(match_id: int, home_score: int, away_score: int) -> Match |
 
 def score_all_finished_matches() -> dict[str, int]:
     """Import ESPN results and recalculate points for every user prediction."""
+    return sync_live_match_scores(full_scan=True)
+
+
+def sync_live_match_scores(*, full_scan: bool = False) -> dict[str, int]:
+    """Poll ESPN for finished scores and update prediction points."""
     from results_sync import (
+        clear_scoreboard_cache,
         import_results_for_finished_matches,
         restore_missing_override_results,
         sync_match_results_from_espn,
     )
 
+    clear_scoreboard_cache()
     sync_match_open_flags()
     imported = import_results_for_finished_matches()
-    espn = sync_match_results_from_espn()
+    if full_scan:
+        espn = sync_match_results_from_espn()
+    else:
+        espn = sync_match_results_from_espn(days_back=5, days_ahead=1)
     restored = restore_missing_override_results()
     recalculated = recalculate_all_prediction_points()
     return {

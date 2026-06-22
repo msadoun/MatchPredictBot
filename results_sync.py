@@ -13,6 +13,12 @@ ESPN_SCOREBOARD_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates={date}"
 )
 
+_scoreboard_cache: dict[str, list[dict]] = {}
+
+
+def clear_scoreboard_cache() -> None:
+    _scoreboard_cache.clear()
+
 TEAM_ALIASES: dict[str, str] = {
     "United States": "USA",
     "Turkey": "Turkiye",
@@ -58,12 +64,16 @@ def _event_is_finished(event: dict) -> bool:
 
 
 def _fetch_scoreboard(date_yyyymmdd: str) -> list[dict]:
+    if date_yyyymmdd in _scoreboard_cache:
+        return _scoreboard_cache[date_yyyymmdd]
+
     url = ESPN_SCOREBOARD_URL.format(date=date_yyyymmdd)
     try:
         with urllib.request.urlopen(url, timeout=20) as response:
             payload = json.load(response)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         logger.warning("ESPN scoreboard fetch failed for %s: %s", date_yyyymmdd, exc)
+        _scoreboard_cache[date_yyyymmdd] = []
         return []
 
     finished: list[dict] = []
@@ -97,6 +107,7 @@ def _fetch_scoreboard(date_yyyymmdd: str) -> list[dict]:
                 "away_score": away_score,
             }
         )
+    _scoreboard_cache[date_yyyymmdd] = finished
     return finished
 
 

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 
@@ -14,6 +15,7 @@ from database import (
     clear_legacy_km3na_manual_points,
     score_all_finished_matches,
     sync_auto_group_points,
+    sync_live_match_scores,
     sync_match_open_flags,
 )
 from handlers import (
@@ -55,6 +57,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SCORE_SYNC_INTERVAL_SEC = 60
+SCORE_SYNC_FULL_SCAN_EVERY = 60  # full ESPN scan every N quick polls (~1 hour)
+
+
+def _log_score_sync_stats(stats: dict[str, int], *, label: str = "Score sync") -> None:
+    if stats["results_updated"]:
+        logger.info("%s: imported %d new result(s) from ESPN", label, stats["results_updated"])
+    if stats["predictions_scored"]:
+        logger.info("%s: recalculated %d prediction point(s)", label, stats["predictions_scored"])
+    if stats["espn_skipped"]:
+        logger.info("%s: ESPN skipped %d unmatched result(s)", label, stats["espn_skipped"])
+
+
+def _run_score_sync(application: Application, *, full_scan: bool) -> dict[str, int]:
+    stats = sync_live_match_scores(full_scan=full_scan)
+    _log_score_sync_stats(stats)
+    return stats
+
+
+async def _run_prediction_backups(application: Application) -> None:
+    try:
+        from prediction_persistence import backup_database_file, update_highwater_mark
+        from prediction_backup import backup_predictions_if_needed
+        from remote_prediction_backup import push_remote_backup
+        from telegram_backup import send_backup_to_admins
+        import time
+
+        backup_predictions_if_needed()
+        push_remote_backup()
+        await send_backup_to_admins(application.bot)
+
+        last = application.bot_data.get("last_prediction_backup", 0)
+        now = time.time()
+        if now - last >= 3600:
+            backup_database_file()
+            update_highwater_mark()
+            push_remote_backup(force=True)
+            await send_backup_to_admins(application.bot, force=True)
+            application.bot_data["last_prediction_backup"] = now
+    except Exception as exc:
+        logger.warning("Periodic prediction backup failed: %s", exc)
+
 
 async def post_init(application: Application) -> None:
     await application.bot.set_chat_menu_button(menu_button=MenuButtonDefault())
@@ -75,51 +119,55 @@ async def post_init(application: Application) -> None:
         await send_backup_to_admins(application.bot, force=True)
     except Exception as exc:
         logger.warning("Startup Telegram backup failed: %s", exc)
+
     if application.job_queue:
         application.job_queue.run_repeating(
-            _sync_open_matches_job, interval=60, first=10
+            _sync_open_matches_job,
+            interval=SCORE_SYNC_INTERVAL_SEC,
+            first=10,
+        )
+        logger.info(
+            "Scheduled match score sync every %ds (job queue)",
+            SCORE_SYNC_INTERVAL_SEC,
+        )
+    else:
+        asyncio.create_task(_score_sync_background_loop(application))
+        logger.warning(
+            "Job queue unavailable — using background score sync every %ds",
+            SCORE_SYNC_INTERVAL_SEC,
         )
 
 
-async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        stats = score_all_finished_matches()
-        if stats["results_updated"]:
-            logger.info("Synced %d new match results from ESPN", stats["results_updated"])
-        if stats["predictions_scored"]:
-            logger.info("Scored %d predictions", stats["predictions_scored"])
-        if stats["espn_skipped"]:
-            logger.info("ESPN skipped %d unmatched results", stats["espn_skipped"])
-    except Exception as exc:
-        logger.warning("Score sync failed: %s", exc)
+async def _score_sync_background_loop(application: Application) -> None:
+    await asyncio.sleep(10)
+    while True:
+        try:
+            await _sync_score_and_backups(application)
+        except Exception as exc:
+            logger.warning("Background score sync failed: %s", exc)
+        await asyncio.sleep(SCORE_SYNC_INTERVAL_SEC)
+
+
+async def _sync_score_and_backups(application: Application) -> None:
+    ticks = int(application.bot_data.get("score_sync_ticks", 0)) + 1
+    application.bot_data["score_sync_ticks"] = ticks
+    full_scan = ticks % SCORE_SYNC_FULL_SCAN_EVERY == 0
+    _run_score_sync(application, full_scan=full_scan)
     if PREDICTION_BACKFILLS.strip():
         from prediction_backfills import apply_prediction_backfills
 
         backfilled = apply_prediction_backfills(PREDICTION_BACKFILLS)
         if backfilled:
             logger.info("Applied %d prediction backfill(s) in sync job", backfilled)
+    await _run_prediction_backups(application)
 
+
+async def _sync_open_matches_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    application = context.application
     try:
-        from prediction_persistence import backup_database_file, update_highwater_mark
-        from prediction_backup import backup_predictions_if_needed
-        from remote_prediction_backup import push_remote_backup
-        from telegram_backup import send_backup_to_admins
-        import time
-
-        backup_predictions_if_needed()
-        push_remote_backup()
-        await send_backup_to_admins(context.bot)
-
-        last = context.application.bot_data.get("last_prediction_backup", 0)
-        now = time.time()
-        if now - last >= 3600:
-            backup_database_file()
-            update_highwater_mark()
-            push_remote_backup(force=True)
-            await send_backup_to_admins(context.bot, force=True)
-            context.application.bot_data["last_prediction_backup"] = now
+        await _sync_score_and_backups(application)
     except Exception as exc:
-        logger.warning("Periodic prediction backup failed: %s", exc)
+        logger.warning("Score sync failed: %s", exc)
 
 
 def main() -> None:
