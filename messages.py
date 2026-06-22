@@ -18,6 +18,7 @@ BTN_CANCEL = "❌ إلغاء التوقع"
 BTN_MY_PREDICTIONS = "📋 توقعاتي"
 BTN_LEADERBOARD = "🏆 المتصدرين"
 BTN_HELP = "❓ المساعدة"
+BTN_BACK_MENU = "↩️ القائمة الرئيسية"
 
 GROUP_WELCOME = (
     "أهلاً بالجميع! أنا بوت توقعات كأس العالم 2026 ⚽\n\n"

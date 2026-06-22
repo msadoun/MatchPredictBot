@@ -52,6 +52,37 @@ def main_menu_keyboard(*, show_admin: bool = False) -> InlineKeyboardMarkup:
         )
     return InlineKeyboardMarkup(rows)
 
+
+def _main_menu_back_row() -> list[InlineKeyboardButton]:
+    return [InlineKeyboardButton(msg.BTN_BACK_MENU, callback_data="menu:main")]
+
+
+def _main_menu_back_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([_main_menu_back_row()])
+
+
+def _append_main_menu_back(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup:
+    rows = [list(row) for row in markup.inline_keyboard] if markup else []
+    rows.append(_main_menu_back_row())
+    return InlineKeyboardMarkup(rows)
+
+
+async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    participant = None
+    if user:
+        participant = db.get_user_by_telegram_id(user.id)
+    _clear_prediction_state(context, participant.id if participant else None)
+    await user_response(
+        update,
+        context,
+        msg.START_TEXT,
+        reply_markup=main_menu_keyboard(
+            show_admin=is_admin(user.id) if user else False
+        ),
+    )
+
+
 RANK_MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
 
 
@@ -159,6 +190,7 @@ async def send_leaderboard(
             markup = InlineKeyboardMarkup(
                 [[InlineKeyboardButton(msg.BTN_SWITCH_GROUP, callback_data="lb:pick")]]
             )
+    markup = _append_main_menu_back(markup)
 
     await user_response(
         update,
@@ -226,6 +258,7 @@ async def _group_picker_keyboard(
     group_rows.append(
         [InlineKeyboardButton(msg.BTN_BACK_LEADERBOARD, callback_data="lb:back")]
     )
+    group_rows.append(_main_menu_back_row())
     return InlineKeyboardMarkup(group_rows)
 
 
@@ -383,6 +416,8 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await leaderboard_command(update, context)
     elif action == "help":
         await start_command(update, context)
+    elif action == "main":
+        await _show_main_menu(update, context)
     elif action == "adminpredictions":
         await admin_predictions_command(update, context)
 
@@ -690,7 +725,9 @@ async def _prompt_score_text(
             winner=winner,
         )
 
-    await edit_or_send_user(update, context, text, bot_username=BOT_USERNAME)
+    await edit_or_send_user(
+        update, context, text, _main_menu_back_markup(), bot_username=BOT_USERNAME
+    )
 
 
 def _winner_keyboard(match_id: int, home_team: str, away_team: str) -> InlineKeyboardMarkup:
@@ -699,6 +736,7 @@ def _winner_keyboard(match_id: int, home_team: str, away_team: str) -> InlineKey
             [InlineKeyboardButton(home_team, callback_data=f"pred:pick:{match_id}:home")],
             [InlineKeyboardButton(msg.DRAW, callback_data=f"pred:pick:{match_id}:draw")],
             [InlineKeyboardButton(away_team, callback_data=f"pred:pick:{match_id}:away")],
+            _main_menu_back_row(),
         ]
     )
 
@@ -719,6 +757,7 @@ def _match_picker_keyboard(
                 )
             ]
         )
+    rows.append(_main_menu_back_row())
     return InlineKeyboardMarkup(rows)
 
 
@@ -744,7 +783,7 @@ async def _show_match_picker(
 
     if not matches:
         text = msg.NO_OPEN_MATCHES
-        markup = None
+        markup = _main_menu_back_markup()
     else:
         text = f"{prompt}\n\n{msg.PREDICTION_ONCE_NOTE}"
         markup = _match_picker_keyboard(matches, user_id=user_db_id)
