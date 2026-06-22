@@ -219,7 +219,21 @@ SETGROUPPOINTS_NOTE = (
     "التوقعات الفعلية وملفات Excel لا تُحذف."
 )
 
-BACKUP_PREDICTIONS_DONE = "تم حفظ نسخة احتياطية: {count} توقع في {filename}"
+CLEAR_USERDATA_DONE = (
+    "تم مسح بيانات المستخدمين والمجموعات.\n"
+    "• مستخدمون: {users}\n"
+    "• توقعات: {predictions}\n"
+    "• أعضاء مجموعات: {group_members}\n"
+    "• نقاط يدوية: {manual_points}\n\n"
+    "المباريات وملفات Excel لم تُمس. "
+    "لاسترجاع التوقعات لاحقاً: /restorepredictions"
+)
+CLEAR_USERDATA_USAGE = "الاستخدام: /clearuserdata confirm"
+CLEAR_USERDATA_CONFIRM = (
+    "⚠️ سيتم حذف كل المستخدمين والمجموعات والتوقعات.\n"
+    "أرسل: /clearuserdata confirm"
+)
+
 RESTORE_PREDICTIONS_DONE = (
     "تم استرجاع {restored} توقع مفقود. "
     "لم يُمس {skipped} توقع موجود مسبقاً — لا يُحذف أو يُستبدل أي توقع."

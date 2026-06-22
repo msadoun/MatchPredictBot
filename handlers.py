@@ -1832,6 +1832,36 @@ async def backup_predictions_command(
     )
 
 
+async def clear_userdata_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if not context.args or context.args[0].lower() != "confirm":
+        await reply_to_user(
+            update, context, msg.CLEAR_USERDATA_CONFIRM, bot_username=BOT_USERNAME
+        )
+        return
+
+    removed = db.clear_users_and_groups_data()
+    await reply_to_user(
+        update,
+        context,
+        msg.CLEAR_USERDATA_DONE.format(
+            users=removed.get("users", 0),
+            predictions=removed.get("predictions", 0),
+            group_members=removed.get("group_members", 0),
+            manual_points=removed.get("group_manual_points", 0),
+        ),
+        bot_username=BOT_USERNAME,
+    )
+
+
 async def restore_predictions_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -1845,7 +1875,12 @@ async def restore_predictions_command(
     import tempfile
 
     from prediction_backup import best_backup_path, restore_predictions_from_file
-    from prediction_persistence import ARCHIVE_PATH, restore_from_archive, update_highwater_mark
+    from prediction_persistence import (
+        ARCHIVE_PATH,
+        clear_intentional_userdata_clear,
+        restore_from_archive,
+        update_highwater_mark,
+    )
 
     restored = 0
     skipped_total = 0
@@ -1886,6 +1921,7 @@ async def restore_predictions_command(
             restored += merged
 
     update_highwater_mark()
+    clear_intentional_userdata_clear()
     if restored == 0 and not doc and not best_backup_path() and not ARCHIVE_PATH.is_file():
         await reply_to_user(
             update,

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 DATA_DIR = DATABASE_PATH.parent
 ARCHIVE_PATH = DATA_DIR / "predictions_archive.jsonl"
 HIGHWATER_PATH = DATA_DIR / "prediction_highwater.json"
+INTENTIONAL_CLEAR_PATH = DATA_DIR / "userdata_cleared.flag"
 DB_BACKUPS_DIR = DATA_DIR / "db_backups"
 MAX_DB_BACKUPS = 30
 
@@ -19,6 +20,27 @@ MAX_DB_BACKUPS = 30
 def _ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     DB_BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def mark_intentional_userdata_clear() -> None:
+    """Prevent startup recovery from re-importing users/predictions after admin wipe."""
+    _ensure_dirs()
+    INTENTIONAL_CLEAR_PATH.write_text(
+        json.dumps({"cleared_at": datetime.utcnow().isoformat()}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    HIGHWATER_PATH.write_text(
+        json.dumps({"max_predictions": 0, "updated_at": datetime.utcnow().isoformat()}),
+        encoding="utf-8",
+    )
+
+
+def clear_intentional_userdata_clear() -> None:
+    INTENTIONAL_CLEAR_PATH.unlink(missing_ok=True)
+
+
+def should_skip_prediction_recovery() -> bool:
+    return INTENTIONAL_CLEAR_PATH.is_file()
 
 
 def count_predictions() -> int:
@@ -220,6 +242,10 @@ def restore_database_from_best_backup() -> bool:
 
 def recover_predictions_if_regressed() -> int:
     """If prediction count dropped or DB is empty, merge back from all local backups."""
+    if should_skip_prediction_recovery():
+        logger.info("Skipping prediction recovery — userdata was cleared by admin.")
+        return 0
+
     current = count_predictions()
     highwater = _load_highwater()
 
@@ -250,6 +276,9 @@ def recover_predictions_if_regressed() -> int:
 
 def prepare_database_before_init() -> None:
     """Run before schema init — recover from full DB copy if wiped."""
+    if should_skip_prediction_recovery():
+        return
+
     _ensure_dirs()
     current_count = _count_predictions_in_db(DATABASE_PATH) if DATABASE_PATH.is_file() else 0
     if not DATABASE_PATH.is_file() or current_count == 0:
@@ -260,7 +289,7 @@ def run_startup_persistence() -> dict[str, int | str | None]:
     """Backup, detect regression, recover. Never deletes predictions."""
     from prediction_backup import backup_predictions_if_needed, merge_missing_predictions_from_backup
 
-    if count_predictions() == 0:
+    if count_predictions() == 0 and not should_skip_prediction_recovery():
         try:
             from remote_prediction_backup import fetch_remote_backup
 
@@ -282,8 +311,11 @@ def run_startup_persistence() -> dict[str, int | str | None]:
     recovered = recover_predictions_if_regressed()
     results["recovered"] = recovered
 
-    merged = merge_missing_predictions_from_backup()
-    results["merged"] = merged
+    if not should_skip_prediction_recovery():
+        merged = merge_missing_predictions_from_backup()
+        results["merged"] = merged
+    else:
+        results["merged"] = 0
 
     db_backup = backup_database_file()
     if db_backup:

@@ -1477,6 +1477,49 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
         )
 
 
+def clear_users_and_groups_data() -> dict[str, int]:
+    """Delete all users, groups, predictions, and manual points. Keeps matches."""
+    try:
+        from prediction_backup import backup_predictions
+
+        backup_predictions(force=True)
+    except Exception as exc:
+        logger.warning("Pre-clear backup skipped: %s", exc)
+
+    tables = (
+        "prediction_drafts",
+        "predictions",
+        "group_manual_points",
+        "group_members",
+        "users",
+    )
+    removed: dict[str, int] = {}
+    with get_db() as conn:
+        for table in tables:
+            removed[table] = int(
+                conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            )
+        conn.execute("DELETE FROM prediction_drafts")
+        conn.execute("DELETE FROM predictions")
+        conn.execute("DELETE FROM group_manual_points")
+        conn.execute("DELETE FROM group_members")
+        conn.execute("DELETE FROM users")
+
+    try:
+        from prediction_persistence import mark_intentional_userdata_clear
+
+        mark_intentional_userdata_clear()
+    except Exception as exc:
+        logger.warning("Could not mark intentional userdata clear: %s", exc)
+
+    logger.warning(
+        "Cleared user/group data: %d users, %d predictions",
+        removed.get("users", 0),
+        removed.get("predictions", 0),
+    )
+    return removed
+
+
 def _row_to_user(row: sqlite3.Row) -> User:
     return User(
         id=row["id"],

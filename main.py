@@ -35,6 +35,7 @@ from handlers import (
     predict_command,
     predict_score_message,
     restore_predictions_command,
+    clear_userdata_command,
     import_excel_command,
     set_group_points_command,
     set_prediction_command,
@@ -209,6 +210,7 @@ def main() -> None:
     app.add_handler(CommandHandler("setgrouppoints", set_group_points_command))
     app.add_handler(CommandHandler("backuppredictions", backup_predictions_command))
     app.add_handler(CommandHandler("restorepredictions", restore_predictions_command))
+    app.add_handler(CommandHandler("clearuserdata", clear_userdata_command))
     app.add_handler(CommandHandler("importexcel", import_excel_command))
     app.add_handler(CommandHandler("syncscores", sync_scores_command))
     app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))
