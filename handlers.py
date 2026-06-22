@@ -37,9 +37,6 @@ def main_menu_keyboard(*, show_admin: bool = False) -> InlineKeyboardMarkup:
             InlineKeyboardButton(msg.BTN_LEADERBOARD, callback_data="menu:leaderboard"),
         ],
         [
-            InlineKeyboardButton(msg.BTN_CHANGE_GROUP, callback_data="menu:changegroup"),
-        ],
-        [
             InlineKeyboardButton(msg.BTN_CANCEL, callback_data="menu:cancel"),
             InlineKeyboardButton(msg.BTN_HELP, callback_data="menu:help"),
         ],
@@ -162,16 +159,10 @@ async def send_leaderboard(
         and viewer_telegram_id
     ):
         participant = db.get_user_by_telegram_id(viewer_telegram_id)
-        if participant:
-            groups = db.get_user_group_chat_ids(participant.id)
-            named = 0
-            for gid in groups:
-                if await _resolve_group_display_name(context, gid):
-                    named += 1
-            if named > 1:
-                markup = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton(msg.BTN_SWITCH_GROUP, callback_data="lb:pick")]]
-                )
+        if participant and len(db.get_user_group_chat_ids(participant.id)) > 1:
+            markup = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(msg.BTN_SWITCH_GROUP, callback_data="lb:pick")]]
+            )
 
     await user_response(
         update,
@@ -241,13 +232,10 @@ async def _group_picker_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-async def _show_group_picker(
+async def _show_group_leaderboard_picker(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     participant: db.User,
-    *,
-    prompt: str,
-    select_callback: str,
 ) -> None:
     groups = db.get_user_group_chat_ids(participant.id)
     if not groups:
@@ -258,67 +246,16 @@ async def _show_group_picker(
         context,
         groups,
         active_chat_id=active,
-        select_callback=select_callback,
+        select_callback="lb:group",
     )
     if keyboard is None:
         await user_response(update, context, msg.LEADERBOARD_PRIVATE_ONLY)
         return
-    await user_response(update, context, prompt, reply_markup=keyboard)
-
-
-async def _show_group_leaderboard_picker(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    participant: db.User,
-) -> None:
-    await _show_group_picker(
+    await user_response(
         update,
         context,
-        participant,
-        prompt=msg.CHOOSE_GROUP_LEADERBOARD,
-        select_callback="lb:group",
-    )
-
-
-async def change_group_command(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    if is_group_chat(update):
-        await reply_to_user(
-            update,
-            context,
-            msg.CHANGE_GROUP_IN_PRIVATE,
-            bot_username=BOT_USERNAME,
-        )
-        return
-
-    participant = _ensure_participant(update)
-    if not participant:
-        return
-
-    groups = db.get_user_group_chat_ids(participant.id)
-    if not groups:
-        await user_response(update, context, msg.LEADERBOARD_PRIVATE_ONLY)
-        return
-
-    if len(groups) == 1:
-        name = await _resolve_group_display_name(context, groups[0]) or msg.UNKNOWN_GROUP
-        db.set_user_active_group(participant.id, groups[0])
-        context.user_data["leaderboard_group_chat_id"] = groups[0]
-        await user_response(
-            update,
-            context,
-            msg.CURRENT_GROUP_ONLY.format(group=name),
-            reply_markup=main_menu_keyboard(show_admin=is_admin(update.effective_user.id) if update.effective_user else False),
-        )
-        return
-
-    await _show_group_picker(
-        update,
-        context,
-        participant,
-        prompt=msg.CHOOSE_ACTIVE_GROUP,
-        select_callback="grp:set",
+        msg.CHOOSE_GROUP_LEADERBOARD,
+        reply_markup=keyboard,
     )
 
 
@@ -333,44 +270,6 @@ def _set_active_group(
     context.user_data["leaderboard_group_chat_id"] = chat_id
     db.set_user_active_group(participant.id, chat_id)
     return True
-
-
-async def group_switch_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    query = update.callback_query
-    if not query or not query.data:
-        return
-
-    await query.answer()
-    parts = query.data.split(":")
-    if len(parts) < 3 or parts[0] != "grp" or parts[1] != "set":
-        return
-
-    user = update.effective_user
-    if not user:
-        return
-
-    participant = db.get_user_by_telegram_id(user.id)
-    if not participant:
-        return
-
-    try:
-        chat_id = int(parts[2])
-    except ValueError:
-        return
-
-    if not _set_active_group(participant, chat_id, context):
-        return
-
-    name = await _resolve_group_display_name(context, chat_id) or msg.UNKNOWN_GROUP
-    show_admin = is_admin(user.id)
-    await user_response(
-        update,
-        context,
-        msg.GROUP_SWITCHED.format(group=name),
-        reply_markup=main_menu_keyboard(show_admin=show_admin),
-    )
 
 
 async def leaderboard_callback(
@@ -460,8 +359,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await my_predictions_command(update, context)
     elif action == "leaderboard":
         await leaderboard_command(update, context)
-    elif action == "changegroup":
-        await change_group_command(update, context)
     elif action == "help":
         await start_command(update, context)
     elif action == "adminpredictions":
