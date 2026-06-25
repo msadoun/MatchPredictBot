@@ -17,6 +17,7 @@ from group_standings import (
 from user_messaging import edit_or_send_user, is_group_chat, reply_to_user
 
 import prediction_reports as reports
+from user_broadcast import broadcast_message, send_user_message
 
 
 def is_admin(user_id: int) -> bool:
@@ -1634,6 +1635,95 @@ async def open_match_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         msg.MATCH_NOW_OPEN.format(id=match_id, match=format_match(match)),
         bot_username=BOT_USERNAME,
     )
+
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if not context.args or context.args[0].lower() != "confirm":
+        await reply_to_user(
+            update,
+            context,
+            msg.BROADCAST_USAGE.format(count=db.count_bot_users()),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    text = " ".join(context.args[1:]).strip()
+    if not text and update.message and update.message.reply_to_message:
+        replied = update.message.reply_to_message
+        text = (replied.text or replied.caption or "").strip()
+    if not text:
+        await reply_to_user(
+            update, context, msg.BROADCAST_EMPTY, bot_username=BOT_USERNAME
+        )
+        return
+
+    recipients = db.list_user_telegram_ids()
+    await reply_to_user(
+        update,
+        context,
+        msg.BROADCAST_STARTED.format(total=len(recipients)),
+        bot_username=BOT_USERNAME,
+    )
+    stats = await broadcast_message(context.bot, text, recipients)
+    await reply_to_user(
+        update,
+        context,
+        msg.BROADCAST_DONE.format(**stats),
+        bot_username=BOT_USERNAME,
+    )
+
+
+async def senduser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if len(context.args) < 2:
+        await reply_to_user(
+            update, context, msg.SENDUSER_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+
+    participant = db.resolve_user_ref(context.args[0])
+    if not participant:
+        await reply_to_user(
+            update, context, msg.SENDUSER_NOT_FOUND, bot_username=BOT_USERNAME
+        )
+        return
+
+    text = " ".join(context.args[1:]).strip()
+    if not text:
+        await reply_to_user(
+            update, context, msg.SENDUSER_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+
+    result = await send_user_message(context.bot, participant.telegram_id, text)
+    if result == "sent":
+        await reply_to_user(
+            update,
+            context,
+            msg.SENDUSER_SENT.format(name=participant.display_name),
+            bot_username=BOT_USERNAME,
+        )
+    elif result == "blocked":
+        await reply_to_user(
+            update, context, msg.SENDUSER_BLOCKED, bot_username=BOT_USERNAME
+        )
+    else:
+        await reply_to_user(
+            update, context, msg.SENDUSER_FAILED, bot_username=BOT_USERNAME
+        )
 
 
 async def sync_scores_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

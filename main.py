@@ -46,6 +46,8 @@ from handlers import (
     set_group_points_command,
     set_prediction_command,
     set_result_command,
+    broadcast_command,
+    senduser_command,
     sync_scores_command,
     stale_keyboard_handler,
     start_command,
@@ -287,6 +289,8 @@ def main() -> None:
     app.add_handler(CommandHandler("factoryreset", clear_userdata_command))
     app.add_handler(CommandHandler("importexcel", import_excel_command))
     app.add_handler(CommandHandler("syncscores", sync_scores_command))
+    app.add_handler(CommandHandler("broadcast", broadcast_command))
+    app.add_handler(CommandHandler("senduser", senduser_command))
     app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu:"))

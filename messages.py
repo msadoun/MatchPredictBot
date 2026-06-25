@@ -157,6 +157,32 @@ LEADERBOARD_TOP_N = "\nيعرض أفضل {shown} من {total} لاعب."
 YOUR_RANK = "\n📍 ترتيبك: #{rank} · {points} نقطة"
 
 ADMIN_ONLY = "هذا الأمر للمسؤولين فقط."
+BROADCAST_USAGE = (
+    "📢 إرسال رسالة لجميع مستخدمي البوت ({count} مستخدم)\n\n"
+    "الاستخدام:\n"
+    "/broadcast confirm <الرسالة>\n\n"
+    "أو ردّ على رسالة تحتوي النص واكتب:\n"
+    "/broadcast confirm\n\n"
+    "تحذير: تُرسل الرسالة في المحادثة الخاصة مع كل مستخدم."
+)
+BROADCAST_EMPTY = "اكتب الرسالة بعد confirm أو ردّ على رسالة تحتوي النص."
+BROADCAST_STARTED = "⏳ جارٍ الإرسال إلى {total} مستخدم..."
+BROADCAST_DONE = (
+    "✅ انتهى الإرسال.\n"
+    "• وصلت: {sent}\n"
+    "• حظر البوت: {blocked}\n"
+    "• فشل: {failed}\n"
+    "• الإجمالي: {total}"
+)
+SENDUSER_USAGE = (
+    "الاستخدام: /senduser <مستخدم> <الرسالة>\n"
+    "مثال: /senduser @username مرحباً!\n"
+    "أو: /senduser 123456789 مرحباً"
+)
+SENDUSER_NOT_FOUND = "المستخدم غير موجود في قاعدة البوت."
+SENDUSER_SENT = "تم إرسال الرسالة إلى {name}."
+SENDUSER_BLOCKED = "المستخدم حظر البوت أو لم يفتح محادثة خاصة."
+SENDUSER_FAILED = "تعذّر إرسال الرسالة."
 ADDMATCH_USAGE = (
     "الاستخدام: /addmatch <فريق_المنزل> <فريق_الضيف> [الموعد]\n"
     'مثال: /addmatch "ريال مدريد" برشلونة "2026-06-20 20:00"'

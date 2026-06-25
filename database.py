@@ -540,6 +540,20 @@ def add_match(home_team: str, away_team: str, kickoff_at: str | None = None) -> 
     return _row_to_match(row)
 
 
+def count_bot_users() -> int:
+    with get_db() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+
+
+def list_user_telegram_ids(*, exclude: set[int] | None = None) -> list[int]:
+    with get_db() as conn:
+        rows = conn.execute("SELECT telegram_id FROM users ORDER BY id").fetchall()
+    ids = [int(row["telegram_id"]) for row in rows]
+    if exclude:
+        ids = [telegram_id for telegram_id in ids if telegram_id not in exclude]
+    return ids
+
+
 def get_match(match_id: int) -> Match | None:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
