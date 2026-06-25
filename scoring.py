@@ -11,8 +11,18 @@ def calculate_points(
     predicted_away: int,
     actual_home: int,
     actual_away: int,
+    *,
+    is_doubled: bool = False,
 ) -> int:
-    """3 exact | 2 correct winner + winner goals | 1 correct winner or draw | 0 otherwise."""
+    """3 exact | 2 correct winner + winner goals | 1 correct winner or draw | 0 otherwise.
+
+    Doubled knockout pick: 6 for exact score only, otherwise 0.
+    """
+    if is_doubled:
+        if predicted_home == actual_home and predicted_away == actual_away:
+            return 6
+        return 0
+
     if predicted_home == actual_home and predicted_away == actual_away:
         return 3
 

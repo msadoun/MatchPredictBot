@@ -43,6 +43,7 @@ class Prediction:
     home_score: int
     away_score: int
     points: int | None
+    is_doubled: bool = False
 
 
 @dataclass
@@ -69,7 +70,7 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
             u.username,
             COALESCE(MAX(gmp.points), 0) + COALESCE(SUM(p.points), 0) AS total_points,
             COUNT(p.id) AS predictions_count,
-            COALESCE(SUM(CASE WHEN p.points = 3 THEN 1 ELSE 0 END), 0) AS exact_hits,
+            COALESCE(SUM(CASE WHEN p.points IN (3, 6) THEN 1 ELSE 0 END), 0) AS exact_hits,
             COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
             COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
         FROM users u
@@ -92,7 +93,7 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
             u.username,
             COALESCE(SUM(p.points), 0) AS total_points,
             COUNT(p.id) AS predictions_count,
-            COALESCE(SUM(CASE WHEN p.points = 3 THEN 1 ELSE 0 END), 0) AS exact_hits,
+            COALESCE(SUM(CASE WHEN p.points IN (3, 6) THEN 1 ELSE 0 END), 0) AS exact_hits,
             COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
             COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
         FROM users u
@@ -199,6 +200,17 @@ def init_db() -> None:
         _migrate_prediction_exports(conn)
         _migrate_group_manual_points(conn)
         _migrate_global_manual_points(conn)
+        _migrate_prediction_doubled(conn)
+
+
+def _migrate_prediction_doubled(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()
+    }
+    if "is_doubled" not in columns:
+        conn.execute(
+            "ALTER TABLE predictions ADD COLUMN is_doubled INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 @dataclass
@@ -335,6 +347,117 @@ def _migrate_predictions_for_groups(conn: sqlite3.Connection) -> None:
     conn.execute(
         "ALTER TABLE predictions ADD COLUMN chat_id INTEGER NOT NULL DEFAULT 0"
     )
+
+
+def _score_prediction(
+    predicted_home: int,
+    predicted_away: int,
+    actual_home: int,
+    actual_away: int,
+    *,
+    is_doubled: bool = False,
+) -> int:
+    return calculate_points(
+        predicted_home,
+        predicted_away,
+        actual_home,
+        actual_away,
+        is_doubled=is_doubled,
+    )
+
+
+def _prediction_stage(kickoff_at: str | None) -> str | None:
+    from knockout_doubles import match_knockout_stage
+
+    return match_knockout_stage(kickoff_at)
+
+
+def count_user_doubles_in_stage(
+    user_id: int,
+    stage: str,
+    *,
+    exclude_match_id: int | None = None,
+) -> int:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.match_id, m.kickoff_at
+            FROM predictions p
+            INNER JOIN matches m ON m.id = p.match_id
+            WHERE p.user_id = ? AND p.is_doubled = 1
+            """,
+            (user_id,),
+        ).fetchall()
+    total = 0
+    for row in rows:
+        if exclude_match_id and int(row["match_id"]) == exclude_match_id:
+            continue
+        if _prediction_stage(row["kickoff_at"]) == stage:
+            total += 1
+    return total
+
+
+def double_points_remaining(user_id: int, match_id: int) -> tuple[int, int, str | None]:
+    """Return (remaining, limit, stage) for a knockout match."""
+    from knockout_doubles import doubles_allowed_for_stage
+
+    match = get_match(match_id)
+    if not match:
+        return 0, 0, None
+    stage = _prediction_stage(match.kickoff_at)
+    if not stage:
+        return 0, 0, None
+    limit = doubles_allowed_for_stage(stage)
+    used = count_user_doubles_in_stage(user_id, stage, exclude_match_id=match_id)
+    existing = get_user_prediction(user_id, match_id)
+    if existing and existing.is_doubled:
+        used += 1
+    remaining = max(0, limit - used)
+    return remaining, limit, stage
+
+
+def can_offer_double_points(user_id: int, match_id: int) -> bool:
+    match = get_match(match_id)
+    if not match or not match_accepts_predictions(match):
+        return False
+    remaining, limit, stage = double_points_remaining(user_id, match_id)
+    if not stage or limit <= 0:
+        return False
+    existing = get_user_prediction(user_id, match_id)
+    if existing and existing.is_doubled:
+        return True
+    return remaining > 0
+
+
+def validate_double_points(user_id: int, match_id: int, *, enable: bool) -> str | None:
+    """Return an error message key from messages.py, or None if allowed."""
+    if not enable:
+        return None
+    match = get_match(match_id)
+    if not match:
+        return "MATCH_NOT_FOUND"
+    if not match_accepts_predictions(match):
+        return "MATCH_NO_LONGER_OPEN"
+    stage = _prediction_stage(match.kickoff_at)
+    if not stage:
+        return "DOUBLE_NOT_KNOCKOUT"
+    from knockout_doubles import doubles_allowed_for_stage
+
+    limit = doubles_allowed_for_stage(stage)
+    if limit <= 0:
+        return "DOUBLE_NOT_AVAILABLE_STAGE"
+    existing = get_user_prediction(user_id, match_id)
+    if existing and existing.is_doubled:
+        return None
+    used = count_user_doubles_in_stage(user_id, stage, exclude_match_id=match_id)
+    if used >= limit:
+        return "DOUBLE_LIMIT_REACHED"
+    return None
+
+
+def prediction_is_doubled(user_id: int, match_id: int) -> bool:
+    prediction = get_user_prediction(user_id, match_id)
+    return bool(prediction and prediction.is_doubled)
 
 
 def upsert_user(telegram_id: int, username: str | None, display_name: str) -> User:
@@ -963,15 +1086,16 @@ def set_match_result(match_id: int, home_score: int, away_score: int) -> Match |
             (home_score, away_score, int(keep_open), match_id),
         )
         predictions = conn.execute(
-            "SELECT id, home_score, away_score FROM predictions WHERE match_id = ?",
+            "SELECT id, home_score, away_score, is_doubled FROM predictions WHERE match_id = ?",
             (match_id,),
         ).fetchall()
         for prediction in predictions:
-            points = calculate_points(
+            points = _score_prediction(
                 prediction["home_score"],
                 prediction["away_score"],
                 home_score,
                 away_score,
+                is_doubled=bool(prediction["is_doubled"]),
             )
             conn.execute(
                 "UPDATE predictions SET points = ? WHERE id = ?",
@@ -1022,15 +1146,16 @@ def rescore_match_predictions(match_id: int) -> int:
     updated = 0
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, home_score, away_score FROM predictions WHERE match_id = ?",
+            "SELECT id, home_score, away_score, is_doubled FROM predictions WHERE match_id = ?",
             (match_id,),
         ).fetchall()
         for row in rows:
-            points = calculate_points(
+            points = _score_prediction(
                 row["home_score"],
                 row["away_score"],
                 match.home_score,
                 match.away_score,
+                is_doubled=bool(row["is_doubled"]),
             )
             conn.execute(
                 "UPDATE predictions SET points = ? WHERE id = ?",
@@ -1045,18 +1170,20 @@ def recalculate_all_prediction_points() -> int:
     with get_db() as conn:
         rows = conn.execute(
             """
-            SELECT p.id, p.home_score, p.away_score, m.home_score AS ah, m.away_score AS aa
+            SELECT p.id, p.home_score, p.away_score, p.is_doubled,
+                   m.home_score AS ah, m.away_score AS aa
             FROM predictions p
             INNER JOIN matches m ON m.id = p.match_id
             WHERE m.home_score IS NOT NULL AND m.away_score IS NOT NULL
             """
         ).fetchall()
         for row in rows:
-            points = calculate_points(
+            points = _score_prediction(
                 row["home_score"],
                 row["away_score"],
                 row["ah"],
                 row["aa"],
+                is_doubled=bool(row["is_doubled"]),
             )
             conn.execute(
                 "UPDATE predictions SET points = ? WHERE id = ?",
@@ -1123,6 +1250,7 @@ def save_prediction(
     away_score: int,
     *,
     allow_closed: bool = False,
+    is_doubled: bool = False,
 ) -> tuple[Prediction, bool]:
     """Save one global prediction per user per match. Returns (prediction, was_update)."""
     match = get_match(match_id)
@@ -1131,7 +1259,12 @@ def save_prediction(
     if not allow_closed and not match_accepts_predictions(match):
         raise ValueError("match_not_open")
 
+    error_key = validate_double_points(user_id, match_id, enable=is_doubled)
+    if error_key:
+        raise ValueError(error_key)
+
     now = datetime.utcnow().isoformat()
+    doubled_int = int(is_doubled)
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -1152,44 +1285,51 @@ def save_prediction(
                     keep_id,
                 )
             if match.home_score is not None and match.away_score is not None:
-                points = calculate_points(
+                points = _score_prediction(
                     home_score,
                     away_score,
                     match.home_score,
                     match.away_score,
+                    is_doubled=is_doubled,
                 )
                 conn.execute(
                     """
                     UPDATE predictions
-                    SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?, points = ?
+                    SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?,
+                        points = ?, is_doubled = ?
                     WHERE id = ?
                     """,
-                    (home_score, away_score, now, points, keep_id),
+                    (home_score, away_score, now, points, doubled_int, keep_id),
                 )
             else:
                 conn.execute(
                     """
                     UPDATE predictions
-                    SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?, points = NULL
+                    SET home_score = ?, away_score = ?, chat_id = 0, updated_at = ?,
+                        points = NULL, is_doubled = ?
                     WHERE id = ?
                     """,
-                    (home_score, away_score, now, keep_id),
+                    (home_score, away_score, now, doubled_int, keep_id),
                 )
         else:
             cursor = conn.execute(
                 """
-                INSERT INTO predictions (user_id, match_id, chat_id, home_score, away_score, created_at, updated_at)
-                VALUES (?, ?, 0, ?, ?, ?, ?)
+                INSERT INTO predictions (
+                    user_id, match_id, chat_id, home_score, away_score,
+                    created_at, updated_at, is_doubled
+                )
+                VALUES (?, ?, 0, ?, ?, ?, ?, ?)
                 """,
-                (user_id, match_id, home_score, away_score, now, now),
+                (user_id, match_id, home_score, away_score, now, now, doubled_int),
             )
             keep_id = cursor.lastrowid
             if match.home_score is not None and match.away_score is not None:
-                points = calculate_points(
+                points = _score_prediction(
                     home_score,
                     away_score,
                     match.home_score,
                     match.away_score,
+                    is_doubled=is_doubled,
                 )
                 conn.execute(
                     "UPDATE predictions SET points = ? WHERE id = ?",
@@ -1309,7 +1449,7 @@ def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
             """
             SELECT
                 p.id AS p_id, p.user_id, p.match_id, p.home_score AS p_home,
-                p.away_score AS p_away, p.points, p.created_at AS p_created,
+                p.away_score AS p_away, p.points, p.is_doubled, p.created_at AS p_created,
                 p.updated_at,
                 m.id AS m_id, m.home_team, m.away_team, m.kickoff_at,
                 m.home_score AS m_home, m.away_score AS m_away, m.is_open,
@@ -1331,6 +1471,7 @@ def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
             home_score=row["p_home"],
             away_score=row["p_away"],
             points=row["points"],
+            is_doubled=bool(row["is_doubled"] or 0),
         )
         if row["m_id"] is not None:
             match = Match(
@@ -1638,4 +1779,5 @@ def _row_to_prediction(row: sqlite3.Row) -> Prediction:
         home_score=row["home_score"],
         away_score=row["away_score"],
         points=row["points"],
+        is_doubled=bool(_row_get(row, "is_doubled", 0)),
     )

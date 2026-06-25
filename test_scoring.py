@@ -30,3 +30,11 @@ def test_iraq_norway_winner_goals():
 def test_wrong_prediction():
     assert calculate_points(2, 0, 0, 2) == 0
     assert calculate_points(1, 0, 1, 1) == 0
+
+
+def test_doubled_exact_only():
+    assert calculate_points(2, 1, 2, 1, is_doubled=True) == 6
+    assert calculate_points(1, 1, 1, 1, is_doubled=True) == 6
+    assert calculate_points(3, 0, 4, 1, is_doubled=True) == 0
+    assert calculate_points(4, 0, 4, 1, is_doubled=True) == 0
+    assert calculate_points(1, 1, 0, 0, is_doubled=True) == 0

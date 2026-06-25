@@ -626,6 +626,7 @@ def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE, user_id: int | N
         "prediction_away_team",
         "prediction_prompt_id",
         "pending_score_pair",
+        "prediction_doubled",
     ):
         context.user_data.pop(key, None)
     if user_id is not None:
@@ -687,6 +688,7 @@ async def _finalize_prediction(
         )
         return False
 
+    is_doubled = bool(context.user_data.get("prediction_doubled", False))
     try:
         prediction, was_update = db.save_prediction(
             participant.id,
@@ -694,12 +696,21 @@ async def _finalize_prediction(
             home_score,
             away_score,
             allow_closed=allow_closed,
+            is_doubled=is_doubled,
         )
-    except ValueError:
+    except ValueError as exc:
         _clear_prediction_state(context, participant.id)
-        await reply_to_user(
-            update, context, msg.MATCH_NO_LONGER_OPEN, bot_username=BOT_USERNAME
-        )
+        error_key = str(exc)
+        if error_key == "DOUBLE_LIMIT_REACHED":
+            _, _, stage = db.double_points_remaining(participant.id, match_id)
+            text = msg.DOUBLE_LIMIT_REACHED.format(stage=stage or "")
+        elif error_key == "DOUBLE_NOT_KNOCKOUT":
+            text = msg.DOUBLE_NOT_KNOCKOUT
+        elif error_key == "DOUBLE_NOT_AVAILABLE_STAGE":
+            text = msg.DOUBLE_NOT_AVAILABLE_STAGE
+        else:
+            text = msg.MATCH_NO_LONGER_OPEN
+        await reply_to_user(update, context, text, bot_username=BOT_USERNAME)
         return False
 
     if not db.get_user_prediction(participant.id, match_id):
@@ -726,16 +737,19 @@ async def _finalize_prediction(
         outcome = away_team
 
     template = msg.PREDICTION_UPDATED if was_update else msg.PREDICTION_SAVED
+    saved_text = template.format(
+        home=home_team,
+        vs=msg.VS,
+        away=away_team,
+        outcome=outcome,
+        score=f"{home_score}-{away_score}",
+    )
+    if is_doubled:
+        saved_text += f"\n{msg.DOUBLE_SAVED_NOTE}"
     await user_response(
         update,
         context,
-        template.format(
-            home=home_team,
-            vs=msg.VS,
-            away=away_team,
-            outcome=outcome,
-            score=f"{home_score}-{away_score}",
-        ),
+        saved_text,
         reply_markup=_prediction_saved_keyboard(),
         skip_back_button=True,
         bot_username=BOT_USERNAME,
@@ -771,6 +785,48 @@ def _scores_from_pick(
     return low, high
 
 
+def _double_points_hint(
+    user_id: int | None,
+    match_id: int,
+    *,
+    active: bool,
+) -> str:
+    if not user_id:
+        return ""
+    remaining, limit, stage = db.double_points_remaining(user_id, match_id)
+    if not stage or limit <= 0:
+        return ""
+    lines = [
+        msg.KNOCKOUT_DOUBLE_HINT.format(remaining=remaining, limit=limit, stage=stage)
+    ]
+    if active:
+        lines.append(msg.DOUBLE_ACTIVE_HINT)
+    return "\n\n" + "\n".join(lines)
+
+
+def _score_step_keyboard(
+    match_id: int,
+    user_id: int | None,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> InlineKeyboardMarkup:
+    rows = [
+        _main_menu_back_row(),
+        _match_picker_back_row(),
+    ]
+    if user_id and db.can_offer_double_points(user_id, match_id):
+        doubled = bool(context.user_data.get("prediction_doubled", False))
+        label = msg.BTN_DOUBLE_POINTS_ON if doubled else msg.BTN_DOUBLE_POINTS
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label, callback_data=f"pred:double:toggle:{match_id}"
+                )
+            ]
+        )
+    rows.append(_winner_back_row(match_id))
+    return InlineKeyboardMarkup(rows)
+
+
 async def _prompt_score_text(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -792,6 +848,12 @@ async def _prompt_score_text(
             match.home_team,
             match.away_team,
         )
+        existing = db.get_user_prediction(participant.id, match.id)
+        context.user_data["prediction_doubled"] = bool(
+            existing and existing.is_doubled
+        )
+    else:
+        context.user_data["prediction_doubled"] = False
 
     if pick == "draw":
         text = msg.PICK_DRAW_PROMPT.format(
@@ -811,22 +873,19 @@ async def _prompt_score_text(
             winner=winner,
         )
 
+    user_id = participant.id if participant else None
+    text += _double_points_hint(
+        user_id,
+        match.id,
+        active=bool(context.user_data.get("prediction_doubled", False)),
+    )
+
     await edit_or_send_user(
         update,
         context,
         text,
-        _score_step_keyboard(match.id),
+        _score_step_keyboard(match.id, user_id, context),
         bot_username=BOT_USERNAME,
-    )
-
-
-def _score_step_keyboard(match_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            _main_menu_back_row(),
-            _match_picker_back_row(),
-            _winner_back_row(match_id),
-        ]
     )
 
 
@@ -849,7 +908,11 @@ def _match_picker_keyboard(
     open_matches = [m for m in matches if db.match_accepts_predictions(m)]
     rows = [_main_menu_back_row()]
     for match in open_matches:
-        prefix = "✓ " if user_id and db.user_has_prediction(user_id, match.id) else ""
+        prefix = ""
+        if user_id and db.prediction_is_doubled(user_id, match.id):
+            prefix = "⭐ "
+        elif user_id and db.user_has_prediction(user_id, match.id):
+            prefix = "✓ "
         rows.append(
             [
                 InlineKeyboardButton(
@@ -894,12 +957,15 @@ async def _prompt_winner_pick(
     context: ContextTypes.DEFAULT_TYPE,
     match: db.Match,
 ) -> None:
+    participant = _ensure_participant(update)
+    user_id = participant.id if participant else None
     text = (
         msg.MATCH_HEADER.format(
             id=match.id, home=match.home_team, vs=msg.VS, away=match.away_team
         )
         + f"\n\n{msg.WHO_WINS}"
     )
+    text += _double_points_hint(user_id, match.id, active=False)
     keyboard = _winner_keyboard(match.id, match.home_team, match.away_team)
     if update.callback_query and not is_group_chat(update):
         await edit_or_send_user(
@@ -1036,6 +1102,40 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 return
             await _prompt_winner_pick(update, context, match)
             return
+
+    if parts[1] == "double" and len(parts) == 4 and parts[2] == "toggle":
+        try:
+            match_id = int(parts[3])
+        except ValueError:
+            return
+        match = db.get_match(match_id)
+        if not match or not db.match_accepts_predictions(match):
+            await _show_match_picker(update, context)
+            return
+        if context.user_data.get("prediction_match_id") != match_id:
+            return
+        pick = context.user_data.get("prediction_pick")
+        if not pick:
+            return
+        current = bool(context.user_data.get("prediction_doubled", False))
+        if current:
+            context.user_data["prediction_doubled"] = False
+        else:
+            error_key = db.validate_double_points(user_db_id, match_id, enable=True)
+            if error_key:
+                _, _, stage = db.double_points_remaining(user_db_id or 0, match_id)
+                alert = {
+                    "DOUBLE_LIMIT_REACHED": msg.DOUBLE_LIMIT_REACHED.format(
+                        stage=stage or ""
+                    ),
+                    "DOUBLE_NOT_KNOCKOUT": msg.DOUBLE_NOT_KNOCKOUT,
+                    "DOUBLE_NOT_AVAILABLE_STAGE": msg.DOUBLE_NOT_AVAILABLE_STAGE,
+                }.get(error_key, msg.MATCH_NO_LONGER_OPEN)
+                await query.answer(alert, show_alert=True)
+                return
+            context.user_data["prediction_doubled"] = True
+        await _prompt_score_text(update, context, match, pick)
+        return
 
     if len(parts) < 3:
         return
@@ -1189,8 +1289,9 @@ async def my_predictions_command(
 
     lines = [msg.YOUR_PREDICTIONS, msg.SCORING_RULES]
     for prediction, match in predictions:
+        doubled = " ⭐" if prediction.is_doubled else ""
         line = (
-            f"#{match.id} {match.home_team} {msg.VS} {match.away_team}\n"
+            f"#{match.id} {match.home_team} {msg.VS} {match.away_team}{doubled}\n"
             f"   {msg.YOUR_PICK}: {prediction.home_score}-{prediction.away_score}"
         )
         if match.home_score is not None and match.away_score is not None:
