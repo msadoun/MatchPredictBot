@@ -243,6 +243,14 @@ def main() -> None:
     if synced:
         logger.info("Updated open/closed status on %d matches", synced)
     try:
+        from knockout_teams import sync_knockout_team_names
+
+        resolved = sync_knockout_team_names()
+        if resolved:
+            logger.info("Resolved knockout team names on %d match(es)", resolved)
+    except Exception as exc:
+        logger.warning("Knockout team sync failed: %s", exc)
+    try:
         stats = score_all_finished_matches()
         if stats["results_updated"]:
             logger.info("Imported %d finished match results from ESPN", stats["results_updated"])

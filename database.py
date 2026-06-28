@@ -1116,6 +1116,9 @@ def set_match_result(match_id: int, home_score: int, away_score: int) -> Match |
                 (points, prediction["id"]),
             )
         row = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+    from knockout_teams import sync_knockout_team_names
+
+    sync_knockout_team_names()
     return _row_to_match(row) if row else None
 
 
@@ -1142,6 +1145,9 @@ def sync_live_match_scores(*, full_scan: bool = False) -> dict[str, int]:
         espn = sync_match_results_from_espn(days_back=5, days_ahead=1)
     restored = restore_missing_override_results()
     recalculated = recalculate_all_prediction_points()
+    from knockout_teams import sync_knockout_team_names
+
+    knockout_resolved = sync_knockout_team_names()
     return {
         "results_updated": espn["updated"] + imported,
         "results_imported": imported,
@@ -1149,6 +1155,7 @@ def sync_live_match_scores(*, full_scan: bool = False) -> dict[str, int]:
         "override_restored": restored,
         "predictions_scored": recalculated,
         "espn_skipped": espn["skipped"],
+        "knockout_teams_resolved": knockout_resolved,
     }
 
 
