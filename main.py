@@ -44,6 +44,7 @@ from handlers import (
     reset_points_command,
     import_excel_command,
     set_group_points_command,
+    userpoints_command,
     set_prediction_command,
     set_result_command,
     broadcast_command,
@@ -288,6 +289,7 @@ def main() -> None:
     app.add_handler(CommandHandler("openmatch", open_match_command))
     app.add_handler(CommandHandler("setgrouppoints", set_group_points_command))
     app.add_handler(CommandHandler("setpoints", set_group_points_command))
+    app.add_handler(CommandHandler("userpoints", userpoints_command))
     app.add_handler(CommandHandler("backuppredictions", backup_predictions_command))
     app.add_handler(CommandHandler("restorepredictions", restore_predictions_command))
     app.add_handler(CommandHandler("cleargroups", clear_groups_command))

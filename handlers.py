@@ -2119,6 +2119,95 @@ async def _resolve_group_chat_id(
         return None
 
 
+async def _apply_group_points_load(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    group_key: str,
+    as_total: bool,
+) -> None:
+    standings = PREDEFINED_GROUP_STANDINGS.get(group_key)
+    if not standings:
+        await reply_to_user(
+            update, context, msg.SETGROUPPOINTS_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+
+    chat_id = await _resolve_group_chat_id(context, group_key, update=update)
+    if chat_id is None:
+        await reply_to_user(
+            update,
+            context,
+            msg.SETGROUPPOINTS_GROUP_NOT_FOUND,
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    if as_total:
+        applied, not_found = db.bulk_set_group_manual_points_for_total(
+            chat_id, standings
+        )
+    else:
+        applied, not_found = db.bulk_set_group_manual_points(chat_id, standings)
+    from prediction_persistence import clear_groups_cleared_flag
+
+    clear_groups_cleared_flag()
+    lines = [
+        msg.SETGROUPPOINTS_LOAD_DONE.format(
+            group=group_key,
+            applied_count=len(applied),
+            missing_count=len(not_found),
+        )
+    ]
+    if applied:
+        lines.append("\n✅:")
+        lines.extend(msg.SETGROUPPOINTS_APPLIED_ROW.format(line=line) for line in applied)
+    if not_found:
+        lines.append("\n❌ لم يُعثر عليهم (يجب /start أولاً):")
+        lines.extend(msg.SETGROUPPOINTS_MISSING_ROW.format(ref=ref) for ref in not_found)
+    lines.append(f"\n{msg.SETGROUPPOINTS_NOTE}")
+    await reply_to_user(update, context, "\n".join(lines), bot_username=BOT_USERNAME)
+
+
+def _format_user_label(user: db.User) -> str:
+    name = user.display_name
+    if user.username:
+        name += f" (@{user.username})"
+    return name
+
+
+async def userpoints_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if not context.args:
+        await reply_to_user(
+            update, context, msg.SETGROUPPOINTS_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+
+    target = db.ensure_user_ref(context.args[0])
+    if not target:
+        await reply_to_user(
+            update, context, msg.SETGROUPPOINTS_USER_NOT_FOUND, bot_username=BOT_USERNAME
+        )
+        return
+
+    breakdown = db.get_user_points_breakdown(target.id)
+    await reply_to_user(
+        update,
+        context,
+        msg.USERPOINTS_BREAKDOWN.format(name=_format_user_label(target), **breakdown),
+        bot_username=BOT_USERNAME,
+    )
+
+
 async def set_group_points_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -2135,83 +2224,44 @@ async def set_group_points_command(
         )
         return
 
-    if context.args[0].lower() == "load":
-        group_key = context.args[1].lower() if len(context.args) > 1 else ALKORAM3NA_GROUP_USERNAME
-        standings = PREDEFINED_GROUP_STANDINGS.get(group_key)
-        if not standings:
-            await reply_to_user(
-                update,
-                context,
-                msg.SETGROUPPOINTS_USAGE,
-                bot_username=BOT_USERNAME,
-            )
-            return
+    args = list(context.args)
+    mode = "base"
+    if args[0].lower() in {"total", "add"}:
+        mode = args[0].lower()
+        args = args[1:]
 
-        chat_id = await _resolve_group_chat_id(context, group_key, update=update)
-        if chat_id is None:
-            await reply_to_user(
-                update,
-                context,
-                msg.SETGROUPPOINTS_GROUP_NOT_FOUND,
-                bot_username=BOT_USERNAME,
-            )
-            return
-
-        applied, not_found = db.bulk_set_group_manual_points(chat_id, standings)
-        from prediction_persistence import clear_groups_cleared_flag
-
-        clear_groups_cleared_flag()
-        lines = [
-            msg.SETGROUPPOINTS_LOAD_DONE.format(
-                group=group_key,
-                applied_count=len(applied),
-                missing_count=len(not_found),
-            )
-        ]
-        if applied:
-            lines.append("\n✅:")
-            lines.extend(msg.SETGROUPPOINTS_APPLIED_ROW.format(line=line) for line in applied)
-        if not_found:
-            lines.append("\n❌ لم يُعثر عليهم (يجب /start أولاً):")
-            lines.extend(
-                msg.SETGROUPPOINTS_MISSING_ROW.format(ref=ref) for ref in not_found
-            )
-        lines.append(f"\n{msg.SETGROUPPOINTS_NOTE}")
-        await reply_to_user(
+    if args and args[0].lower() in {"load", "loadtotal"}:
+        group_key = args[1].lower() if len(args) > 1 else ALKORAM3NA_GROUP_USERNAME
+        await _apply_group_points_load(
             update,
             context,
-            "\n".join(lines),
-            bot_username=BOT_USERNAME,
+            group_key=group_key,
+            as_total=args[0].lower() == "loadtotal",
         )
         return
 
     group_ref: str
     user_ref: str
-    points: int
 
-    if len(context.args) == 2:
+    if len(args) == 2:
         group_ref = ALKORAM3NA_GROUP_USERNAME
-        user_ref = context.args[0]
-        try:
-            points = int(context.args[1])
-        except ValueError:
-            await reply_to_user(
-                update, context, msg.SCORES_MUST_BE_NUMBERS, bot_username=BOT_USERNAME
-            )
-            return
-    elif len(context.args) >= 3:
-        group_ref = context.args[0]
-        user_ref = context.args[1]
-        try:
-            points = int(context.args[2])
-        except ValueError:
-            await reply_to_user(
-                update, context, msg.SCORES_MUST_BE_NUMBERS, bot_username=BOT_USERNAME
-            )
-            return
+        user_ref = args[0]
+        points_str = args[1]
+    elif len(args) >= 3:
+        group_ref = args[0]
+        user_ref = args[1]
+        points_str = args[2]
     else:
         await reply_to_user(
             update, context, msg.SETGROUPPOINTS_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+
+    try:
+        points = int(points_str)
+    except ValueError:
+        await reply_to_user(
+            update, context, msg.SCORES_MUST_BE_NUMBERS, bot_username=BOT_USERNAME
         )
         return
 
@@ -2232,24 +2282,46 @@ async def set_group_points_command(
         )
         return
 
-    db.set_group_manual_points(chat_id, target.id, points)
+    if mode == "total":
+        db.set_group_manual_points_for_total(chat_id, target.id, points)
+    elif mode == "add":
+        db.add_group_manual_points(chat_id, target.id, points)
+    else:
+        db.set_group_manual_points(chat_id, target.id, points)
+
     from prediction_persistence import clear_groups_cleared_flag
 
     clear_groups_cleared_flag()
     group_label = group_ref.lstrip("@")
-    name = target.display_name
-    if target.username:
-        name += f" (@{target.username})"
-    await reply_to_user(
-        update,
-        context,
-        msg.SETGROUPPOINTS_ONE_DONE.format(
+    name = _format_user_label(target)
+    breakdown = db.get_user_points_breakdown(target.id)
+
+    if mode == "total":
+        text = msg.SETPOINTS_TOTAL_DONE.format(
+            name=name,
+            total=breakdown["total"],
+            group=group_label,
+            manual_base=breakdown["manual_base"],
+            prediction_points=breakdown["prediction_points"],
+        )
+    elif mode == "add":
+        text = msg.SETPOINTS_ADD_DONE.format(
+            name=name,
+            delta=points,
+            manual_base=breakdown["manual_base"],
+            prediction_points=breakdown["prediction_points"],
+            total=breakdown["total"],
+        )
+    else:
+        text = msg.SETGROUPPOINTS_ONE_DONE.format(
             name=name,
             points=points,
             group=group_label,
-        ),
-        bot_username=BOT_USERNAME,
-    )
+            prediction_points=breakdown["prediction_points"],
+            total=breakdown["total"],
+        )
+
+    await reply_to_user(update, context, text, bot_username=BOT_USERNAME)
 
 
 async def backup_predictions_command(

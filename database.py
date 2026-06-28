@@ -672,6 +672,48 @@ def set_group_manual_points_for_total(
     set_group_manual_points(chat_id, user_id, base)
 
 
+def get_user_points_breakdown(user_id: int) -> dict[str, int]:
+    manual = get_group_manual_points(GLOBAL_MANUAL_POINTS_CHAT_ID, user_id) or 0
+    prediction = user_scored_prediction_points(user_id)
+    return {
+        "manual_base": manual,
+        "prediction_points": prediction,
+        "total": manual + prediction,
+    }
+
+
+def add_group_manual_points(chat_id: int, user_id: int, delta: int) -> int:
+    """Add to manual base. Returns new base."""
+    current = get_group_manual_points(GLOBAL_MANUAL_POINTS_CHAT_ID, user_id) or 0
+    new_base = max(0, current + delta)
+    set_group_manual_points(chat_id, user_id, new_base)
+    return new_base
+
+
+def bulk_set_group_manual_points_for_total(
+    chat_id: int,
+    standings: list[tuple[str, int]],
+) -> tuple[list[str], list[str]]:
+    """Set manual base so each user's leaderboard total matches target."""
+    applied: list[str] = []
+    not_found: list[str] = []
+    for user_ref, target_total in standings:
+        user = ensure_user_ref(user_ref)
+        if not user:
+            not_found.append(user_ref)
+            continue
+        set_group_manual_points_for_total(chat_id, user.id, target_total)
+        breakdown = get_user_points_breakdown(user.id)
+        label = user.display_name
+        if user.username:
+            label += f" (@{user.username})"
+        applied.append(
+            f"{label}: {target_total} إجمالي "
+            f"(أساس {breakdown['manual_base']} + توقعات {breakdown['prediction_points']})"
+        )
+    return applied, not_found
+
+
 def bulk_set_group_manual_points(
     chat_id: int,
     standings: list[tuple[str, int]],

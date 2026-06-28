@@ -242,16 +242,42 @@ ADMIN_PREDICTIONS_EXPORT_DONE = (
 ADMIN_PREDICTIONS_FILE_CAPTION = "تقرير توقعات — {label}"
 
 SETGROUPPOINTS_USAGE = (
-    "الاستخدام:\n"
-    "• /setgrouppoints load alkoram3na — الكورة معنا\n"
-    "• /setgrouppoints <مجموعة> <مستخدم> <نقاط>\n"
-    "• /setpoints <مستخدم> <نقاط> — الكورة معنا (بدون مجموعة)\n"
+    "📊 تعديل النقاط اليدوية (تُضاف فوق نقاط التوقعات الجديدة):\n\n"
+    "• /setpoints <مستخدم> <نقاط> — نقاط أساسية (قديمة)\n"
+    "• /setpoints total <مستخدم> <نقاط> — إجمالي على اللوحة (أساس + توقعات)\n"
+    "• /setpoints add <مستخدم> <نقاط> — إضافة للأساس\n"
+    "• /userpoints <مستخدم> — عرض التفصيل\n\n"
+    "• /setgrouppoints load alkoram3na — تحميل قائمة الكورة معنا\n"
+    "• /setgrouppoints loadtotal alkoram3na — تحميل كإجمالي (وليس أساس فقط)\n"
+    "• /setgrouppoints <مجموعة> <مستخدم> <نقاط>\n\n"
     "مثال: /setpoints M2usab 24\n"
-    "مثال: /setpoints 10140530 24 — برقم تيليجرام حتى بدون /start"
+    "مثال: /setpoints total M2usab 30 — لو عنده 6 من التوقعات يصبح الأساس 24"
 )
 SETGROUPPOINTS_USER_NOT_FOUND = (
     "المستخدم غير موجود. اطلب منه /start للبوت، "
     "أو استخدم رقم تيليجرام: /setpoints <telegram_id> <نقاط>"
+)
+USERPOINTS_BREAKDOWN = (
+    "📊 نقاط {name}\n"
+    "• نقاط أساسية (قديمة): {manual_base}\n"
+    "• نقاط التوقعات: {prediction_points}\n"
+    "• الإجمالي على اللوحة: {total}"
+)
+SETPOINTS_TOTAL_DONE = (
+    "تم ضبط {name} على {total} نقطة إجمالي في «{group}».\n"
+    "• أساس: {manual_base}\n"
+    "• توقعات: {prediction_points}"
+)
+SETPOINTS_ADD_DONE = (
+    "تمت إضافة {delta} نقطة لـ {name}.\n"
+    "• أساس جديد: {manual_base}\n"
+    "• توقعات: {prediction_points}\n"
+    "• إجمالي: {total}"
+)
+SETGROUPPOINTS_ONE_DONE = (
+    "تم تعيين {name}: {points} نقطة أساسية في «{group}».\n"
+    "• توقعات حالية: {prediction_points}\n"
+    "• إجمالي على اللوحة: {total}"
 )
 SETGROUPPOINTS_LOAD_DONE = (
     "تم تعيين نقاط المجموعة «{group}».\n\n"
@@ -260,7 +286,6 @@ SETGROUPPOINTS_LOAD_DONE = (
 )
 SETGROUPPOINTS_APPLIED_ROW = "• {line}"
 SETGROUPPOINTS_MISSING_ROW = "• {ref}"
-SETGROUPPOINTS_ONE_DONE = "تم تعيين {name}: {points} نقطة أساسية في المجموعة «{group}» (تُضاف لتوقعاته)."
 SETGROUPPOINTS_GROUP_NOT_FOUND = (
     "تعذّر العثور على المجموعة. أضف البوت للمجموعة، أو شغّل الأمر من داخلها، "
     "أو عيّن ALKORAM3NA_GROUP_CHAT_ID."
