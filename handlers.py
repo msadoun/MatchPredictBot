@@ -805,6 +805,20 @@ def _double_points_hint(
     return "\n\n" + "\n".join(lines)
 
 
+def _double_toggle_visible(
+    user_id: int | None,
+    match_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> bool:
+    if not user_id:
+        return False
+    if context.user_data.get("prediction_doubled"):
+        return True
+    if db.prediction_is_doubled(user_id, match_id):
+        return True
+    return db.can_offer_double_points(user_id, match_id)
+
+
 def _score_step_keyboard(
     match_id: int,
     user_id: int | None,
@@ -814,9 +828,9 @@ def _score_step_keyboard(
         _main_menu_back_row(),
         _match_picker_back_row(),
     ]
-    if user_id and db.can_offer_double_points(user_id, match_id):
+    if _double_toggle_visible(user_id, match_id, context):
         doubled = bool(context.user_data.get("prediction_doubled", False))
-        label = msg.BTN_DOUBLE_POINTS_ON if doubled else msg.BTN_DOUBLE_POINTS
+        label = msg.BTN_DOUBLE_POINTS_OFF if doubled else msg.BTN_DOUBLE_POINTS
         rows.append(
             [
                 InlineKeyboardButton(
@@ -1121,6 +1135,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         current = bool(context.user_data.get("prediction_doubled", False))
         if current:
             context.user_data["prediction_doubled"] = False
+            await query.answer(msg.DOUBLE_DEACTIVATED)
         else:
             error_key = db.validate_double_points(user_db_id, match_id, enable=True)
             if error_key:
@@ -1135,6 +1150,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 await query.answer(alert, show_alert=True)
                 return
             context.user_data["prediction_doubled"] = True
+            await query.answer(msg.DOUBLE_ACTIVATED)
         await _prompt_score_text(update, context, match, pick)
         return
 
