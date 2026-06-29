@@ -19,7 +19,7 @@ from worldcup2026 import (
     stage_from_kickoff,
 )
 
-EXCEL_HEADERS = ("user name", "prediction", "result", "round", "points")
+EXCEL_HEADERS = ("user name", "prediction", "result", "round", "points", "double")
 
 
 @dataclass
@@ -27,6 +27,7 @@ class PredictionCell:
     home_score: int
     away_score: int
     points: int | None
+    is_doubled: bool = False
 
 
 @dataclass
@@ -163,7 +164,8 @@ def build_prediction_report(scope_type: str, scope_key: str) -> PredictionReport
             ).fetchall()
             pred_rows = conn.execute(
                 f"""
-                SELECT p.user_id, p.match_id, p.home_score, p.away_score, p.points
+                SELECT p.user_id, p.match_id, p.home_score, p.away_score, p.points,
+                       p.is_doubled
                 FROM predictions p
                 WHERE p.match_id IN ({placeholders})
                 """,
@@ -178,6 +180,7 @@ def build_prediction_report(scope_type: str, scope_key: str) -> PredictionReport
                 home_score=row["home_score"],
                 away_score=row["away_score"],
                 points=row["points"],
+                is_doubled=bool(row["is_doubled"] or 0),
             )
 
     users, always_include_user_ids, extra_display_names = _resolve_always_include_users(
@@ -241,8 +244,14 @@ def report_summary_text(report: PredictionReport, *, max_users: int = 12) -> str
     return "\n".join(lines)
 
 
-def _excel_rows(report: PredictionReport) -> list[tuple[str, str, str, str, int | str]]:
-    rows: list[tuple[str, str, str, str, int | str]] = []
+def _double_points_label(is_doubled: bool) -> str:
+    return "yes" if is_doubled else "no"
+
+
+def _excel_rows(
+    report: PredictionReport,
+) -> list[tuple[str, str, str, str, int | str, str]]:
+    rows: list[tuple[str, str, str, str, int | str, str]] = []
     for user in report.users:
         for match in report.matches:
             cell = report.predictions.get((user.id, match.id))
@@ -255,6 +264,7 @@ def _excel_rows(report: PredictionReport) -> list[tuple[str, str, str, str, int 
                         _actual_result(match),
                         _match_round(match),
                         points,
+                        _double_points_label(cell.is_doubled),
                     )
                 )
             elif user.id in report.always_include_user_ids:
@@ -264,6 +274,7 @@ def _excel_rows(report: PredictionReport) -> list[tuple[str, str, str, str, int 
                         "",
                         _actual_result(match),
                         _match_round(match),
+                        "",
                         "",
                     )
                 )
@@ -276,6 +287,7 @@ def _excel_rows(report: PredictionReport) -> list[tuple[str, str, str, str, int 
                     "",
                     _actual_result(match),
                     _match_round(match),
+                    "",
                     "",
                 )
             )
