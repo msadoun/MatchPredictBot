@@ -232,10 +232,38 @@ def resolve_knockout_teams(matches: list) -> dict[int, tuple[str, str]]:
     return updates
 
 
+def refresh_knockout_fixture_names() -> int:
+    """Reset knockout rows to canonical placeholder names from worldcup2026."""
+    from database import get_db
+    from worldcup2026 import WORLD_CUP_2026_FIXTURES, is_group_stage_label, kickoff_label
+
+    changed = 0
+    with get_db() as conn:
+        for fixture in WORLD_CUP_2026_FIXTURES:
+            if is_group_stage_label(fixture.group):
+                continue
+            kickoff_at = kickoff_label(fixture)
+            row = conn.execute(
+                "SELECT id, home_team, away_team FROM matches WHERE kickoff_at = ?",
+                (kickoff_at,),
+            ).fetchone()
+            if not row:
+                continue
+            if row["home_team"] == fixture.home and row["away_team"] == fixture.away:
+                continue
+            conn.execute(
+                "UPDATE matches SET home_team = ?, away_team = ? WHERE id = ?",
+                (fixture.home, fixture.away, row["id"]),
+            )
+            changed += 1
+    return changed
+
+
 def sync_knockout_team_names() -> int:
     """Write resolved team names into the matches table."""
     from database import get_db, list_matches
 
+    refresh_knockout_fixture_names()
     all_matches = list_matches()
     updates = resolve_knockout_teams(all_matches)
     if not updates:

@@ -74,7 +74,7 @@ TEAM_EN_TO_AR: dict[str, str] = {
     "Group B 1st": "أول المجموعة ب",
     "Group J 1st": "أول المجموعة ي",
     "Group J 2nd": "ثاني المجموعة ي",
-    "3rd Group A/B/C/D/F": "ثالث (أ/ب/ج/د/هـ)",
+    "3rd Group A/B/C/D/F": "ثالث (أ/ب/ج/د/و)",
     "3rd Group C/D/F/G/H": "ثالث (ج/د/و/ز/ح)",
     "3rd Group C/E/F/H/I": "ثالث (ج/هـ/و/ح/ط)",
     "3rd Group E/H/I/J/K": "ثالث (هـ/ح/ط/ي/ك)",
