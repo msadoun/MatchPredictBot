@@ -80,6 +80,10 @@ BTN_DOUBLE_POINTS = "⭐ مضاعفة النقاط"
 BTN_DOUBLE_POINTS_ON = "⭐ مضاعفة النقاط ✓"
 BTN_DOUBLE_POINTS_OFF = "❌ إلغاء مضاعفة النقاط"
 KNOCKOUT_DOUBLE_HINT = "⭐ يمكنك مضاعفة {remaining} من {limit} مباراة في {stage}"
+KNOCKOUT_DOUBLE_PICKER_HINT = (
+    "⭐ أدوار الإقصاء: يمكنك تفعيل «مضاعفة النقاط» قبل التوقع "
+    "(٦ للنتيجة الدقيقة فقط). يمكنك إلغاؤها لاحقاً."
+)
 DOUBLE_ACTIVE_HINT = (
     "مضاعفة مفعّلة: النتيجة الدقيقة = ٦ نقاط، وإلا ٠\n"
     "اضغط «إلغاء مضاعفة النقاط» لإلغائها."
@@ -87,7 +91,10 @@ DOUBLE_ACTIVE_HINT = (
 DOUBLE_DEACTIVATED = "تم إلغاء مضاعفة النقاط."
 DOUBLE_ACTIVATED = "تم تفعيل مضاعفة النقاط."
 DOUBLE_LIMIT_REACHED = "استخدمت كل مضاعفاتك في {stage}"
-DOUBLE_SAVED_NOTE = "⭐ مضاعفة النقاط مفعّلة على هذه المباراة"
+DOUBLE_SAVED_NOTE = "⭐ مضاعفة النقاط مفعّلة على هذه المباراة (٦ للنتيجة الدقيقة فقط)"
+DOUBLE_SAVED_DEACTIVATED = "تم إلغاء مضاعفة النقاط على هذه المباراة."
+DOUBLE_STATUS_ACTIVE = "⭐ مضاعفة: ٦ نقاط للنتيجة الدقيقة فقط، وإلا ٠"
+DOUBLE_ALREADY_OFF = "المضاعفة غير مفعّلة على هذه المباراة."
 DOUBLE_NOT_KNOCKOUT = "المضاعفة متاحة فقط في أدوار الإقصاء."
 DOUBLE_NOT_AVAILABLE_STAGE = "لا توجد مضاعفات متاحة في هذا الدور."
 

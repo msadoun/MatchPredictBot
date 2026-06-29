@@ -628,6 +628,7 @@ def _clear_prediction_state(context: ContextTypes.DEFAULT_TYPE, user_id: int | N
         "prediction_prompt_id",
         "pending_score_pair",
         "prediction_doubled",
+        "double_session_edited",
     ):
         context.user_data.pop(key, None)
     if user_id is not None:
@@ -645,16 +646,53 @@ def _load_prediction_draft(
     context.user_data["prediction_pick"] = draft.pick
     context.user_data["prediction_home_team"] = draft.home_team
     context.user_data["prediction_away_team"] = draft.away_team
+    _sync_double_from_db(context, user_id, draft.match_id)
     return True
 
 
-def _prediction_saved_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            _main_menu_back_row(),
-            [InlineKeyboardButton(msg.BTN_PREDICT, callback_data="menu:predict")],
-        ]
-    )
+def _sync_double_from_db(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int | None,
+    match_id: int,
+) -> None:
+    if user_id:
+        existing = db.get_user_prediction(user_id, match_id)
+        context.user_data["prediction_doubled"] = bool(
+            existing and existing.is_doubled
+        )
+    else:
+        context.user_data["prediction_doubled"] = False
+    context.user_data.pop("double_session_edited", None)
+
+
+def _set_double_session(
+    context: ContextTypes.DEFAULT_TYPE,
+    match_id: int,
+    *,
+    enabled: bool,
+) -> None:
+    context.user_data["prediction_match_id"] = match_id
+    context.user_data["prediction_doubled"] = enabled
+    context.user_data["double_session_edited"] = True
+
+
+def _prediction_saved_keyboard(
+    match_id: int | None = None,
+    *,
+    is_doubled: bool = False,
+) -> InlineKeyboardMarkup:
+    rows = [_main_menu_back_row()]
+    if match_id and is_doubled:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    msg.BTN_DOUBLE_POINTS_OFF,
+                    callback_data=f"pred:double:off:{match_id}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(msg.BTN_PREDICT, callback_data="menu:predict")])
+    return InlineKeyboardMarkup(rows)
 
 
 async def _finalize_prediction(
@@ -751,7 +789,7 @@ async def _finalize_prediction(
         update,
         context,
         saved_text,
-        reply_markup=_prediction_saved_keyboard(),
+        reply_markup=_prediction_saved_keyboard(match_id, is_doubled=is_doubled),
         skip_back_button=True,
         bot_username=BOT_USERNAME,
     )
@@ -819,6 +857,22 @@ def _double_toggle_visible(
     return db.can_offer_double_points(user_id, match_id)
 
 
+def _double_toggle_row(
+    match_id: int,
+    user_id: int | None,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> list[InlineKeyboardButton] | None:
+    if not _double_toggle_visible(user_id, match_id, context):
+        return None
+    doubled = bool(context.user_data.get("prediction_doubled", False))
+    label = msg.BTN_DOUBLE_POINTS_OFF if doubled else msg.BTN_DOUBLE_POINTS
+    return [
+        InlineKeyboardButton(
+            label, callback_data=f"pred:double:toggle:{match_id}"
+        )
+    ]
+
+
 def _score_step_keyboard(
     match_id: int,
     user_id: int | None,
@@ -828,16 +882,9 @@ def _score_step_keyboard(
         _main_menu_back_row(),
         _match_picker_back_row(),
     ]
-    if _double_toggle_visible(user_id, match_id, context):
-        doubled = bool(context.user_data.get("prediction_doubled", False))
-        label = msg.BTN_DOUBLE_POINTS_OFF if doubled else msg.BTN_DOUBLE_POINTS
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    label, callback_data=f"pred:double:toggle:{match_id}"
-                )
-            ]
-        )
+    double_row = _double_toggle_row(match_id, user_id, context)
+    if double_row:
+        rows.append(double_row)
     rows.append(_winner_back_row(match_id))
     return InlineKeyboardMarkup(rows)
 
@@ -855,6 +902,7 @@ async def _prompt_score_text(
     context.user_data["prediction_away_team"] = match.away_team
 
     participant = _ensure_participant(update)
+    user_id = participant.id if participant else None
     if participant:
         db.save_prediction_draft(
             participant.id,
@@ -863,12 +911,8 @@ async def _prompt_score_text(
             match.home_team,
             match.away_team,
         )
-        existing = db.get_user_prediction(participant.id, match.id)
-        context.user_data["prediction_doubled"] = bool(
-            existing and existing.is_doubled
-        )
-    else:
-        context.user_data["prediction_doubled"] = False
+    if not context.user_data.get("double_session_edited"):
+        _sync_double_from_db(context, user_id, match.id)
 
     if pick == "draw":
         text = msg.PICK_DRAW_PROMPT.format(
@@ -904,16 +948,29 @@ async def _prompt_score_text(
     )
 
 
-def _winner_keyboard(match_id: int, home_team: str, away_team: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
+def _winner_keyboard(
+    match_id: int,
+    home_team: str,
+    away_team: str,
+    user_id: int | None = None,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+) -> InlineKeyboardMarkup:
+    rows = [
+        _main_menu_back_row(),
+        _match_picker_back_row(),
+    ]
+    if context is not None:
+        double_row = _double_toggle_row(match_id, user_id, context)
+        if double_row:
+            rows.append(double_row)
+    rows.extend(
         [
-            _main_menu_back_row(),
-            _match_picker_back_row(),
             [InlineKeyboardButton(home_team, callback_data=f"pred:pick:{match_id}:home")],
             [InlineKeyboardButton(msg.DRAW, callback_data=f"pred:pick:{match_id}:draw")],
             [InlineKeyboardButton(away_team, callback_data=f"pred:pick:{match_id}:away")],
         ]
     )
+    return InlineKeyboardMarkup(rows)
 
 
 def _match_picker_keyboard(
@@ -962,6 +1019,10 @@ async def _show_match_picker(
         markup = None
     else:
         text = f"{prompt}\n\n{msg.PREDICTION_ONCE_NOTE}"
+        from knockout_doubles import match_knockout_stage
+
+        if any(match_knockout_stage(m.kickoff_at) for m in matches):
+            text += f"\n\n{msg.KNOCKOUT_DOUBLE_PICKER_HINT}"
         markup = _match_picker_keyboard(matches, user_id=user_db_id)
 
     await menu_screen_response(update, context, text, markup)
@@ -974,14 +1035,27 @@ async def _prompt_winner_pick(
 ) -> None:
     participant = _ensure_participant(update)
     user_id = participant.id if participant else None
+    prior_match = context.user_data.get("prediction_match_id")
+    context.user_data["prediction_match_id"] = match.id
+    if context.user_data.get("double_session_edited") and prior_match == match.id:
+        pass
+    else:
+        _sync_double_from_db(context, user_id, match.id)
+
     text = (
         msg.MATCH_HEADER.format(
             id=match.id, home=match.home_team, vs=msg.VS, away=match.away_team
         )
         + f"\n\n{msg.WHO_WINS}"
     )
-    text += _double_points_hint(user_id, match.id, active=False)
-    keyboard = _winner_keyboard(match.id, match.home_team, match.away_team)
+    text += _double_points_hint(
+        user_id,
+        match.id,
+        active=bool(context.user_data.get("prediction_doubled", False)),
+    )
+    keyboard = _winner_keyboard(
+        match.id, match.home_team, match.away_team, user_id, context
+    )
     if update.callback_query and not is_group_chat(update):
         await edit_or_send_user(
             update, context, text, keyboard, bot_username=BOT_USERNAME
@@ -1110,13 +1184,58 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 match_id = int(parts[3])
             except ValueError:
                 return
-            _clear_prediction_state(context, user_db_id)
+            for key in ("prediction_step", "prediction_pick", "pending_score_pair"):
+                context.user_data.pop(key, None)
+            if user_db_id:
+                db.clear_prediction_draft(user_db_id)
             match = db.get_match(match_id)
             if not match or not db.match_accepts_predictions(match):
                 await _show_match_picker(update, context)
                 return
             await _prompt_winner_pick(update, context, match)
             return
+
+    if parts[1] == "double" and len(parts) == 4 and parts[2] == "off":
+        try:
+            match_id = int(parts[3])
+        except ValueError:
+            return
+        if not user_db_id:
+            return
+        prediction = db.get_user_prediction(user_db_id, match_id)
+        match = db.get_match(match_id)
+        if not prediction or not prediction.is_doubled:
+            await query.answer(msg.DOUBLE_ALREADY_OFF, show_alert=True)
+            return
+        if not match or not db.match_accepts_predictions(match):
+            await query.answer(msg.MATCH_NO_LONGER_OPEN, show_alert=True)
+            return
+        try:
+            db.save_prediction(
+                user_db_id,
+                match_id,
+                prediction.home_score,
+                prediction.away_score,
+                is_doubled=False,
+            )
+        except ValueError:
+            await query.answer(msg.MATCH_NO_LONGER_OPEN, show_alert=True)
+            return
+        await query.answer(msg.DOUBLE_DEACTIVATED)
+        saved_text = msg.DOUBLE_SAVED_DEACTIVATED
+        if match:
+            saved_text += (
+                f"\n\n#{match.id} {match.home_team} {msg.VS} {match.away_team}\n"
+                f"{msg.YOUR_PICK}: {prediction.home_score}-{prediction.away_score}"
+            )
+        await edit_or_send_user(
+            update,
+            context,
+            saved_text,
+            _prediction_saved_keyboard(match_id, is_doubled=False),
+            bot_username=BOT_USERNAME,
+        )
+        return
 
     if parts[1] == "double" and len(parts) == 4 and parts[2] == "toggle":
         try:
@@ -1128,13 +1247,12 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await _show_match_picker(update, context)
             return
         if context.user_data.get("prediction_match_id") != match_id:
-            return
-        pick = context.user_data.get("prediction_pick")
-        if not pick:
-            return
+            context.user_data["prediction_match_id"] = match_id
+            if not context.user_data.get("double_session_edited"):
+                _sync_double_from_db(context, user_db_id, match_id)
         current = bool(context.user_data.get("prediction_doubled", False))
         if current:
-            context.user_data["prediction_doubled"] = False
+            _set_double_session(context, match_id, enabled=False)
             await query.answer(msg.DOUBLE_DEACTIVATED)
         else:
             error_key = db.validate_double_points(user_db_id, match_id, enable=True)
@@ -1149,9 +1267,13 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 }.get(error_key, msg.MATCH_NO_LONGER_OPEN)
                 await query.answer(alert, show_alert=True)
                 return
-            context.user_data["prediction_doubled"] = True
+            _set_double_session(context, match_id, enabled=True)
             await query.answer(msg.DOUBLE_ACTIVATED)
-        await _prompt_score_text(update, context, match, pick)
+        pick = context.user_data.get("prediction_pick")
+        if pick:
+            await _prompt_score_text(update, context, match, pick)
+        else:
+            await _prompt_winner_pick(update, context, match)
         return
 
     if len(parts) < 3:
@@ -1179,6 +1301,7 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await _show_match_picker(update, context)
             return
 
+        context.user_data.pop("double_session_edited", None)
         await _prompt_winner_pick(update, context, match)
         return
 
@@ -1311,6 +1434,8 @@ async def my_predictions_command(
             f"#{match.id} {match.home_team} {msg.VS} {match.away_team}{doubled}\n"
             f"   {msg.YOUR_PICK}: {prediction.home_score}-{prediction.away_score}"
         )
+        if prediction.is_doubled:
+            line += f"\n   {msg.DOUBLE_STATUS_ACTIVE}"
         if match.home_score is not None and match.away_score is not None:
             line += f"\n   {msg.ACTUAL}: {match.home_score}-{match.away_score}"
             line += f"\n   {msg.POINTS_LABEL}: {prediction.points if prediction.points is not None else 0}"
