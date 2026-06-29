@@ -55,8 +55,21 @@ def test_winner_placeholder_resolves_after_result():
     assert updates[89][0] == "المكسيك"
 
 
-def test_group_e_winner_plays_third_from_group_d_not_ecuador():
-    """Round of 32: Germany (Group E winner) vs Paraguay (3rd Group D), not Ecuador."""
+def test_fifa_combination_assigns_paraguay_to_germany_slot():
+    from worldcup_third_place import lookup_third_place_assignments
+
+    assignments = lookup_third_place_assignments(frozenset("BDEFGIJL"))
+    assert assignments is not None
+    assert assignments["1Evs"] == "D"
+    assert assignments["1Ivs"] == "F"
+
+
+def test_group_e_winner_plays_third_from_group_d_not_ecuador(monkeypatch):
+    """Round of 32: Germany (Group E winner) vs Paraguay (3rd Group D), not Sweden."""
+    monkeypatch.setattr(
+        "knockout_teams._qualifying_third_group_letters",
+        lambda _standings: frozenset("BDEFGIJL"),
+    )
     matches = [
         _match(1, "ألمانيا", "كوراساو", "المجموعة هـ", hs=7, aws=1),
         _match(2, "ساحل العاج", "الإكوادور", "المجموعة هـ", hs=1, aws=1),
@@ -74,3 +87,4 @@ def test_group_e_winner_plays_third_from_group_d_not_ecuador():
     ]
     updates = resolve_knockout_teams(matches)
     assert updates[74] == ("ألمانيا", "باراغواي")
+    assert updates[74][1] != "السويد"

@@ -125,31 +125,59 @@ def _group_for_letter(letter: str) -> str | None:
     return GROUP_BY_LETTER.get(letter.strip())
 
 
-def _third_place_candidates(
-    letters: list[str],
+def _qualifying_third_group_letters(
     standings: dict[str, list[_TeamStanding]],
-) -> list[str]:
-    candidates: list[_TeamStanding] = []
-    for letter in letters:
-        group = _group_for_letter(letter)
-        if not group:
-            continue
-        rows = standings.get(group, [])
+) -> frozenset[str]:
+    """FIFA letters A-L for groups whose third-place team ranks in the top eight."""
+    from worldcup_third_place import FIFA_LETTER_TO_ARABIC
+
+    candidates: list[tuple[_TeamStanding, str]] = []
+    for fifa_letter, arabic_letter in FIFA_LETTER_TO_ARABIC.items():
+        group = _group_for_letter(arabic_letter)
+        rows = standings.get(group or "", [])
         if len(rows) < 3:
             continue
-        candidates.append(rows[2])
-    candidates.sort(key=_rank_key)
-    return [row.team for row in candidates]
+        third = rows[2]
+        if third.played < 3:
+            continue
+        candidates.append((third, fifa_letter))
+    candidates.sort(key=lambda item: _rank_key(item[0]))
+    return frozenset(fifa for _, fifa in candidates[:8])
+
+
+def _winner_slot_from_home(home_name: str) -> str | None:
+    from worldcup_third_place import WINNER_ARABIC_TO_SLOT
+
+    if match := FIRST_IN_GROUP.match(home_name.strip()):
+        return WINNER_ARABIC_TO_SLOT.get(match.group(1))
+    return None
+
+
+def _third_place_team_for_slot(
+    slot: str | None,
+    assignments: dict[str, str],
+    standings: dict[str, list[_TeamStanding]],
+) -> str | None:
+    from worldcup_third_place import FIFA_LETTER_TO_ARABIC
+
+    if not slot:
+        return None
+    third_fifa = assignments.get(slot)
+    if not third_fifa:
+        return None
+    group = _group_for_letter(FIFA_LETTER_TO_ARABIC[third_fifa])
+    rows = standings.get(group or "", [])
+    return rows[2].team if len(rows) > 2 else None
 
 
 @dataclass
 class _Resolver:
     standings: dict[str, list[_TeamStanding]]
     matches_by_id: dict[int, object]
-    third_assigned: set[str] = field(default_factory=set)
+    third_assignments: dict[str, str] = field(default_factory=dict)
     cache: dict[str, str] = field(default_factory=dict)
 
-    def resolve(self, name: str) -> str | None:
+    def resolve(self, name: str, *, winner_home: str | None = None) -> str | None:
         name = name.strip()
         if not is_placeholder_team(name):
             return name
@@ -165,13 +193,11 @@ class _Resolver:
             group = _group_for_letter(match.group(1))
             rows = self.standings.get(group or "", [])
             resolved = rows[1].team if len(rows) > 1 else None
-        elif match := THIRD_IN_GROUP.match(name):
-            letters = [part.strip() for part in match.group(1).split("/")]
-            for team in _third_place_candidates(letters, self.standings):
-                if team not in self.third_assigned:
-                    resolved = team
-                    self.third_assigned.add(team)
-                    break
+        elif THIRD_IN_GROUP.match(name):
+            slot = _winner_slot_from_home(winner_home or "")
+            resolved = _third_place_team_for_slot(
+                slot, self.third_assignments, self.standings
+            )
         elif match := WINNER_OF.match(name):
             match_id = _parse_match_ref(match.group(1))
             resolved = self._match_participant(match_id, want_winner=True)
@@ -206,9 +232,17 @@ class _Resolver:
 
 def resolve_knockout_teams(matches: list) -> dict[int, tuple[str, str]]:
     """Return match_id -> (home_team, away_team) for resolved knockout rows."""
+    from worldcup_third_place import lookup_third_place_assignments
+
     standings = compute_group_tables(matches)
+    qualifying = _qualifying_third_group_letters(standings)
+    third_assignments = lookup_third_place_assignments(qualifying) or {}
     matches_by_id = {int(m.id): m for m in matches}
-    resolver = _Resolver(standings=standings, matches_by_id=matches_by_id)
+    resolver = _Resolver(
+        standings=standings,
+        matches_by_id=matches_by_id,
+        third_assignments=third_assignments,
+    )
     updates: dict[int, tuple[str, str]] = {}
 
     for match in sorted(matches, key=lambda m: int(m.id)):
@@ -216,7 +250,11 @@ def resolve_knockout_teams(matches: list) -> dict[int, tuple[str, str]]:
         if not stage or is_group_stage_label(stage):
             continue
         home = resolver.resolve(match.home_team)
-        away = resolver.resolve(match.away_team)
+        away_name = match.away_team
+        if THIRD_IN_GROUP.match(away_name.strip()):
+            away = resolver.resolve(away_name, winner_home=match.home_team)
+        else:
+            away = resolver.resolve(away_name)
         new_home = (
             home
             if home and not is_placeholder_team(home)
