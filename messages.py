@@ -249,15 +249,17 @@ ADMIN_PREDICTIONS_EXPORT_DONE = (
 ADMIN_PREDICTIONS_FILE_CAPTION = "تقرير توقعات — {label}"
 
 BTN_ADMIN_MATCH_PHOTO = "📷 صورة توقعات مباراة"
-ADMIN_MATCH_PHOTO_MENU = "📷 صورة توقعات مباراة\n\nاختر المباراة:"
+ADMIN_MATCH_PHOTO_PICK_STAGE = "📷 صورة توقعات مباراة\n\nاختر المرحلة أو المجموعة:"
+ADMIN_MATCH_PHOTO_PICK_MATCH = "📷 {stage}\n\nاختر المباراة:"
 ADMIN_MATCH_PHOTO_USAGE = (
     "📷 صورة توقعات مباراة\n\n"
     "الاستخدام:\n"
-    "• /matchphoto — اختيار مباراة من القائمة\n"
+    "• /matchphoto — اختيار المرحلة ثم المباراة\n"
     "• /matchphoto <رقم_المباراة> — إنشاء الصورة مباشرة"
 )
 ADMIN_MATCH_PHOTO_CAPTION = "توقعات المباراة #{id}: {home} ضد {away}"
 ADMIN_MATCH_PHOTO_EMPTY = "لا توجد مباريات في قاعدة البيانات."
+ADMIN_MATCH_PHOTO_EMPTY_STAGE = "لا توجد مباريات في «{stage}»."
 
 SETGROUPPOINTS_USAGE = (
     "📊 تعديل النقاط اليدوية (تُضاف فوق نقاط التوقعات الجديدة):\n\n"

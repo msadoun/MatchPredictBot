@@ -2001,6 +2001,25 @@ async def _send_admin_report_document(
     return True
 
 
+def _admin_match_photo_stage_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
+    stages = reports.list_available_stages()
+    context.user_data["adminphoto_stages"] = stages
+    rows: list[list[InlineKeyboardButton]] = []
+    for index, stage in enumerate(stages):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    stage,
+                    callback_data=f"adminpred:photostage:{index}",
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
 def _admin_match_photo_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     for match in matches[:30]:
@@ -2016,9 +2035,67 @@ def _admin_match_photo_picker_keyboard(matches: list[db.Match]) -> InlineKeyboar
             ]
         )
     rows.append(
-        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")]
+        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:photopick")]
     )
     return InlineKeyboardMarkup(rows)
+
+
+async def _show_match_photo_stage_picker(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    edit: bool = False,
+) -> None:
+    stages = reports.list_available_stages()
+    if not stages:
+        text = msg.ADMIN_MATCH_PHOTO_EMPTY
+        markup = _admin_predictions_menu_keyboard()
+    else:
+        text = msg.ADMIN_MATCH_PHOTO_PICK_STAGE
+        markup = _admin_match_photo_stage_keyboard(context)
+
+    if edit:
+        await edit_or_send_user(
+            update,
+            context,
+            text,
+            reply_markup=markup,
+            bot_username=BOT_USERNAME,
+        )
+    else:
+        await reply_to_user(
+            update,
+            context,
+            text,
+            reply_markup=markup,
+            bot_username=BOT_USERNAME,
+        )
+
+
+async def _show_match_photo_match_picker(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stage_key: str,
+) -> None:
+    matches = reports.matches_for_scope("stage", stage_key)
+    if not matches:
+        await edit_or_send_user(
+            update,
+            context,
+            msg.ADMIN_MATCH_PHOTO_EMPTY_STAGE.format(stage=stage_key),
+            reply_markup=_admin_match_photo_stage_keyboard(context),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    context.user_data["adminphoto_stage"] = stage_key
+    await edit_or_send_user(
+        update,
+        context,
+        msg.ADMIN_MATCH_PHOTO_PICK_MATCH.format(stage=stage_key),
+        reply_markup=_admin_match_photo_picker_keyboard(matches),
+        bot_username=BOT_USERNAME,
+    )
 
 
 async def _send_match_prediction_photo(
@@ -2055,22 +2132,7 @@ async def match_photo_command(
         return
 
     if not context.args:
-        matches = db.list_matches(open_only=False)
-        if not matches:
-            await reply_to_user(
-                update,
-                context,
-                msg.ADMIN_MATCH_PHOTO_EMPTY,
-                bot_username=BOT_USERNAME,
-            )
-            return
-        await reply_to_user(
-            update,
-            context,
-            msg.ADMIN_MATCH_PHOTO_MENU,
-            reply_markup=_admin_match_photo_picker_keyboard(matches),
-            bot_username=BOT_USERNAME,
-        )
+        await _show_match_photo_stage_picker(update, context)
         return
 
     try:
@@ -2166,23 +2228,18 @@ async def admin_predictions_callback(
         return
 
     if action == "photopick":
-        matches = db.list_matches(open_only=False)
-        if not matches:
-            await edit_or_send_user(
-                update,
-                context,
-                msg.ADMIN_MATCH_PHOTO_EMPTY,
-                reply_markup=_admin_predictions_menu_keyboard(),
-                bot_username=BOT_USERNAME,
-            )
+        await _show_match_photo_stage_picker(update, context, edit=True)
+        return
+
+    if action == "photostage" and len(parts) >= 3:
+        stages = context.user_data.get("adminphoto_stages") or reports.list_available_stages()
+        try:
+            index = int(parts[2])
+        except ValueError:
             return
-        await edit_or_send_user(
-            update,
-            context,
-            msg.ADMIN_MATCH_PHOTO_MENU,
-            reply_markup=_admin_match_photo_picker_keyboard(matches),
-            bot_username=BOT_USERNAME,
-        )
+        if not (0 <= index < len(stages)):
+            return
+        await _show_match_photo_match_picker(update, context, stages[index])
         return
 
     if action == "photo" and len(parts) >= 3:
