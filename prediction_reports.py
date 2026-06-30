@@ -248,6 +248,69 @@ def _double_points_label(is_doubled: bool) -> str:
     return "yes" if is_doubled else "no"
 
 
+MATCH_PHOTO_HEADERS = ("user name", "prediction", "double")
+MATCH_PHOTO_FILL = "C5D9F1"
+
+
+def _double_points_label_ar(is_doubled: bool) -> str:
+    return "نعم" if is_doubled else "لا"
+
+
+def build_match_photo_rows(match: Match) -> list[tuple[str, str, str]]:
+    from database import list_predictions_for_match
+
+    rows: list[tuple[str, str, str]] = []
+    for user, prediction in list_predictions_for_match(match.id):
+        rows.append(
+            (
+                user.display_name,
+                _score_line(match, prediction.home_score, prediction.away_score),
+                _double_points_label_ar(prediction.is_doubled),
+            )
+        )
+    return rows
+
+
+def build_match_photo_workbook(match: Match) -> Workbook:
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = f"match_{match.id}"[:31]
+
+    header_fill = PatternFill(fill_type="solid", fgColor=MATCH_PHOTO_FILL)
+    alt_fill = PatternFill(fill_type="solid", fgColor=MATCH_PHOTO_FILL)
+    white_fill = PatternFill(fill_type="solid", fgColor="FFFFFF")
+
+    sheet.append(list(MATCH_PHOTO_HEADERS))
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="right")
+
+    for index, row in enumerate(build_match_photo_rows(match)):
+        sheet.append(list(row))
+        row_fill = white_fill if index % 2 == 0 else alt_fill
+        for cell in sheet[index + 2]:
+            cell.fill = row_fill
+            cell.alignment = Alignment(horizontal="right")
+
+    for column_index, header in enumerate(MATCH_PHOTO_HEADERS, start=1):
+        column = get_column_letter(column_index)
+        max_len = len(header)
+        for row in sheet.iter_rows(
+            min_row=2,
+            min_col=column_index,
+            max_col=column_index,
+            values_only=True,
+        ):
+            if row[0] is not None:
+                max_len = max(max_len, len(str(row[0])))
+        sheet.column_dimensions[column].width = min(max_len + 2, 50)
+
+    return workbook
+
+
 def _excel_rows(
     report: PredictionReport,
 ) -> list[tuple[str, str, str, str, int | str, str]]:
