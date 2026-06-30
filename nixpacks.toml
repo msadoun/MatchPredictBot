@@ -1,3 +1,18 @@
-# System libraries required by WeasyPrint for match prediction photos.
+# WeasyPrint system libraries for match prediction photos.
+# "..." keeps auto-detected packages (including Python) from the provider.
 [phases.setup]
-nixPkgs = ["cairo", "pango", "gdk-pixbuf", "libffi", "zlib", "fontconfig", "freetype"]
+nixPkgs = [
+  "...",
+  "cairo",
+  "pango",
+  "gdk-pixbuf",
+  "glib",
+  "harfbuzz",
+  "fribidi",
+  "libffi",
+  "zlib",
+  "fontconfig",
+  "freetype",
+  "libpng",
+]
+nixLibs = ["...", "cairo", "pango", "gdk-pixbuf"]
