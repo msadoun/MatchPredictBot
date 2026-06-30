@@ -250,6 +250,7 @@ def _double_points_label(is_doubled: bool) -> str:
 
 MATCH_PHOTO_HEADERS = ("user name", "prediction", "double")
 MATCH_PHOTO_FILL = "C5D9F1"
+MATCH_TABLE_HEADERS_AR = ("اللاعب", "التوقع", "مضاعف")
 
 
 def _double_points_label_ar(is_doubled: bool) -> str:
@@ -269,6 +270,59 @@ def build_match_photo_rows(match: Match) -> list[tuple[str, str, str]]:
             )
         )
     return rows
+
+
+def _table_cell(text: str, width: int) -> str:
+    if len(text) > width:
+        return text[: max(1, width - 1)] + "…"
+    return text.ljust(width)
+
+
+def format_match_prediction_table(match: Match) -> str:
+    rows = build_match_photo_rows(match)
+    title = f"📋 توقعات المباراة #{match.id}"
+    matchup = f"{match.home_team} ضد {match.away_team}"
+    lines = [title, matchup]
+    if match.kickoff_at:
+        lines.append(f"الموعد: {match.kickoff_at}")
+    if match.home_score is not None and match.away_score is not None:
+        lines.append(f"النتيجة: {match.home_score}-{match.away_score}")
+    else:
+        lines.append("النتيجة: لم تُسجَّل بعد")
+
+    if not rows:
+        lines.append("")
+        lines.append("لا توجد توقعات لهذه المباراة بعد.")
+        return "\n".join(lines)
+
+    widths = [
+        max(len(MATCH_TABLE_HEADERS_AR[0]), *(len(row[0]) for row in rows)),
+        max(len(MATCH_TABLE_HEADERS_AR[1]), *(len(row[1]) for row in rows)),
+        max(len(MATCH_TABLE_HEADERS_AR[2]), *(len(row[2]) for row in rows)),
+    ]
+    separator = "─" * (sum(widths) + 4)
+    table_lines = [
+        "  ".join(
+            _table_cell(header, width)
+            for header, width in zip(MATCH_TABLE_HEADERS_AR, widths)
+        ),
+        separator,
+    ]
+    for index, row in enumerate(rows, start=1):
+        user, prediction, doubled = row
+        table_lines.append(
+            f"{index}. "
+            + "  ".join(
+                _table_cell(cell, width)
+                for cell, width in zip((user, prediction, doubled), widths)
+            )
+        )
+
+    lines.append("")
+    lines.extend(table_lines)
+    lines.append("")
+    lines.append(f"عدد التوقعات: {len(rows)}")
+    return "\n".join(lines)
 
 
 def build_match_photo_workbook(match: Match) -> Workbook:

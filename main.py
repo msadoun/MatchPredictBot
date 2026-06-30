@@ -47,6 +47,7 @@ from handlers import (
     userpoints_command,
     set_prediction_command,
     set_result_command,
+    match_table_command,
     match_photo_command,
     broadcast_command,
     senduser_command,
@@ -303,6 +304,7 @@ def main() -> None:
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     app.add_handler(CommandHandler("senduser", senduser_command))
     app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))
+    app.add_handler(CommandHandler("matchtable", match_table_command))
     app.add_handler(CommandHandler("matchphoto", match_photo_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu:"))

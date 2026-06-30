@@ -17,7 +17,6 @@ from group_standings import (
 from user_messaging import edit_or_send_user, is_group_chat, reply_to_user
 
 import prediction_reports as reports
-from prediction_image import build_match_prediction_image
 from user_broadcast import broadcast_message, send_user_message
 
 
@@ -1900,7 +1899,7 @@ def _admin_predictions_menu_keyboard() -> InlineKeyboardMarkup:
                     callback_data="adminpred:scope:group_stage:all",
                 )
             ],
-            [InlineKeyboardButton(msg.BTN_ADMIN_MATCH_PHOTO, callback_data="adminpred:photopick")],
+            [InlineKeyboardButton(msg.BTN_ADMIN_MATCH_TABLE, callback_data="adminpred:photopick")],
             [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_SAVED, callback_data="adminpred:saved")],
         ]
     )
@@ -2040,7 +2039,7 @@ def _admin_match_photo_picker_keyboard(matches: list[db.Match]) -> InlineKeyboar
     return InlineKeyboardMarkup(rows)
 
 
-async def _show_match_photo_stage_picker(
+async def _show_match_table_stage_picker(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
@@ -2048,10 +2047,10 @@ async def _show_match_photo_stage_picker(
 ) -> None:
     stages = reports.list_available_stages()
     if not stages:
-        text = msg.ADMIN_MATCH_PHOTO_EMPTY
+        text = msg.ADMIN_MATCH_TABLE_EMPTY
         markup = _admin_predictions_menu_keyboard()
     else:
-        text = msg.ADMIN_MATCH_PHOTO_PICK_STAGE
+        text = msg.ADMIN_MATCH_TABLE_PICK_STAGE
         markup = _admin_match_photo_stage_keyboard(context)
 
     if edit:
@@ -2072,7 +2071,7 @@ async def _show_match_photo_stage_picker(
         )
 
 
-async def _show_match_photo_match_picker(
+async def _show_match_table_match_picker(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     stage_key: str,
@@ -2082,7 +2081,7 @@ async def _show_match_photo_match_picker(
         await edit_or_send_user(
             update,
             context,
-            msg.ADMIN_MATCH_PHOTO_EMPTY_STAGE.format(stage=stage_key),
+            msg.ADMIN_MATCH_TABLE_EMPTY_STAGE.format(stage=stage_key),
             reply_markup=_admin_match_photo_stage_keyboard(context),
             bot_username=BOT_USERNAME,
         )
@@ -2092,13 +2091,13 @@ async def _show_match_photo_match_picker(
     await edit_or_send_user(
         update,
         context,
-        msg.ADMIN_MATCH_PHOTO_PICK_MATCH.format(stage=stage_key),
+        msg.ADMIN_MATCH_TABLE_PICK_MATCH.format(stage=stage_key),
         reply_markup=_admin_match_photo_picker_keyboard(matches),
         bot_username=BOT_USERNAME,
     )
 
 
-async def _send_match_prediction_photo(
+async def _send_match_prediction_table(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     match: db.Match,
@@ -2107,21 +2106,14 @@ async def _send_match_prediction_photo(
     if not user:
         return
 
-    image_bytes = build_match_prediction_image(match)
-    caption = msg.ADMIN_MATCH_PHOTO_CAPTION.format(
-        id=match.id,
-        home=match.home_team,
-        away=match.away_team,
-    )
+    text = reports.format_match_prediction_table(match)
+    if len(text) > 3900:
+        text = text[:3900] + "\n…"
     chat_id = user.id if is_group_chat(update) else update.effective_chat.id
-    await context.bot.send_photo(
-        chat_id=chat_id,
-        photo=image_bytes,
-        caption=caption,
-    )
+    await context.bot.send_message(chat_id=chat_id, text=text)
 
 
-async def match_photo_command(
+async def match_table_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     user = update.effective_user
@@ -2132,7 +2124,7 @@ async def match_photo_command(
         return
 
     if not context.args:
-        await _show_match_photo_stage_picker(update, context)
+        await _show_match_table_stage_picker(update, context)
         return
 
     try:
@@ -2156,7 +2148,14 @@ async def match_photo_command(
         )
         return
 
-    await _send_match_prediction_photo(update, context, match)
+    await _send_match_prediction_table(update, context, match)
+
+
+async def match_photo_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Backward-compatible alias for /matchtable."""
+    await match_table_command(update, context)
 
 
 async def admin_predictions_command(
@@ -2228,7 +2227,7 @@ async def admin_predictions_callback(
         return
 
     if action == "photopick":
-        await _show_match_photo_stage_picker(update, context, edit=True)
+        await _show_match_table_stage_picker(update, context, edit=True)
         return
 
     if action == "photostage" and len(parts) >= 3:
@@ -2239,7 +2238,7 @@ async def admin_predictions_callback(
             return
         if not (0 <= index < len(stages)):
             return
-        await _show_match_photo_match_picker(update, context, stages[index])
+        await _show_match_table_match_picker(update, context, stages[index])
         return
 
     if action == "photo" and len(parts) >= 3:
@@ -2251,7 +2250,7 @@ async def admin_predictions_callback(
         if not match:
             await query.answer(msg.MATCH_NOT_FOUND.format(id=match_id), show_alert=True)
             return
-        await _send_match_prediction_photo(update, context, match)
+        await _send_match_prediction_table(update, context, match)
         return
 
     if action == "scope" and len(parts) >= 4:

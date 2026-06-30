@@ -248,18 +248,17 @@ ADMIN_PREDICTIONS_EXPORT_DONE = (
 )
 ADMIN_PREDICTIONS_FILE_CAPTION = "تقرير توقعات — {label}"
 
-BTN_ADMIN_MATCH_PHOTO = "📷 صورة توقعات مباراة"
-ADMIN_MATCH_PHOTO_PICK_STAGE = "📷 صورة توقعات مباراة\n\nاختر المرحلة أو المجموعة:"
-ADMIN_MATCH_PHOTO_PICK_MATCH = "📷 {stage}\n\nاختر المباراة:"
-ADMIN_MATCH_PHOTO_USAGE = (
-    "📷 صورة توقعات مباراة\n\n"
+BTN_ADMIN_MATCH_TABLE = "📋 جدول توقعات مباراة"
+ADMIN_MATCH_TABLE_PICK_STAGE = "📋 جدول توقعات مباراة\n\nاختر المرحلة أو المجموعة:"
+ADMIN_MATCH_TABLE_PICK_MATCH = "📋 {stage}\n\nاختر المباراة:"
+ADMIN_MATCH_TABLE_USAGE = (
+    "📋 جدول توقعات مباراة\n\n"
     "الاستخدام:\n"
-    "• /matchphoto — اختيار المرحلة ثم المباراة\n"
-    "• /matchphoto <رقم_المباراة> — إنشاء الصورة مباشرة"
+    "• /matchtable — اختيار المرحلة ثم المباراة\n"
+    "• /matchtable <رقم_المباراة> — عرض الجدول مباشرة"
 )
-ADMIN_MATCH_PHOTO_CAPTION = "توقعات المباراة #{id}: {home} ضد {away}"
-ADMIN_MATCH_PHOTO_EMPTY = "لا توجد مباريات في قاعدة البيانات."
-ADMIN_MATCH_PHOTO_EMPTY_STAGE = "لا توجد مباريات في «{stage}»."
+ADMIN_MATCH_TABLE_EMPTY = "لا توجد مباريات في قاعدة البيانات."
+ADMIN_MATCH_TABLE_EMPTY_STAGE = "لا توجد مباريات في «{stage}»."
 
 SETGROUPPOINTS_USAGE = (
     "📊 تعديل النقاط اليدوية (تُضاف فوق نقاط التوقعات الجديدة):\n\n"
