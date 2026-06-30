@@ -17,6 +17,7 @@ from group_standings import (
 from user_messaging import edit_or_send_user, is_group_chat, reply_to_user
 
 import prediction_reports as reports
+from prediction_image import build_match_prediction_image
 from user_broadcast import broadcast_message, send_user_message
 
 
@@ -1899,6 +1900,7 @@ def _admin_predictions_menu_keyboard() -> InlineKeyboardMarkup:
                     callback_data="adminpred:scope:group_stage:all",
                 )
             ],
+            [InlineKeyboardButton(msg.BTN_ADMIN_MATCH_PHOTO, callback_data="adminpred:photopick")],
             [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_SAVED, callback_data="adminpred:saved")],
         ]
     )
@@ -1999,6 +2001,102 @@ async def _send_admin_report_document(
     return True
 
 
+def _admin_match_photo_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for match in matches[:30]:
+        label = f"#{match.id} {match.home_team} {msg.VS} {match.away_team}"
+        if len(label) > 60:
+            label = label[:57] + "…"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"adminpred:photo:{match.id}",
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+async def _send_match_prediction_photo(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    match: db.Match,
+) -> None:
+    user = update.effective_user
+    if not user:
+        return
+
+    image_bytes = build_match_prediction_image(match)
+    caption = msg.ADMIN_MATCH_PHOTO_CAPTION.format(
+        id=match.id,
+        home=match.home_team,
+        away=match.away_team,
+    )
+    chat_id = user.id if is_group_chat(update) else update.effective_chat.id
+    await context.bot.send_photo(
+        chat_id=chat_id,
+        photo=image_bytes,
+        caption=caption,
+    )
+
+
+async def match_photo_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if not context.args:
+        matches = db.list_matches(open_only=False)
+        if not matches:
+            await reply_to_user(
+                update,
+                context,
+                msg.ADMIN_MATCH_PHOTO_EMPTY,
+                bot_username=BOT_USERNAME,
+            )
+            return
+        await reply_to_user(
+            update,
+            context,
+            msg.ADMIN_MATCH_PHOTO_MENU,
+            reply_markup=_admin_match_photo_picker_keyboard(matches),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    try:
+        match_id = int(context.args[0])
+    except ValueError:
+        await reply_to_user(
+            update,
+            context,
+            msg.MATCH_ID_NOT_NUMBER,
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    match = db.get_match(match_id)
+    if not match:
+        await reply_to_user(
+            update,
+            context,
+            msg.MATCH_NOT_FOUND.format(id=match_id),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    await _send_match_prediction_photo(update, context, match)
+
+
 async def admin_predictions_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -2065,6 +2163,38 @@ async def admin_predictions_callback(
                 reply_markup=_admin_stage_picker_keyboard(context),
                 bot_username=BOT_USERNAME,
             )
+        return
+
+    if action == "photopick":
+        matches = db.list_matches(open_only=False)
+        if not matches:
+            await edit_or_send_user(
+                update,
+                context,
+                msg.ADMIN_MATCH_PHOTO_EMPTY,
+                reply_markup=_admin_predictions_menu_keyboard(),
+                bot_username=BOT_USERNAME,
+            )
+            return
+        await edit_or_send_user(
+            update,
+            context,
+            msg.ADMIN_MATCH_PHOTO_MENU,
+            reply_markup=_admin_match_photo_picker_keyboard(matches),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    if action == "photo" and len(parts) >= 3:
+        try:
+            match_id = int(parts[2])
+        except ValueError:
+            return
+        match = db.get_match(match_id)
+        if not match:
+            await query.answer(msg.MATCH_NOT_FOUND.format(id=match_id), show_alert=True)
+            return
+        await _send_match_prediction_photo(update, context, match)
         return
 
     if action == "scope" and len(parts) >= 4:

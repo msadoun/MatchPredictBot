@@ -1506,6 +1506,42 @@ def get_user_prediction(user_id: int, match_id: int) -> Prediction | None:
     return _row_to_prediction(row) if row else None
 
 
+def list_predictions_for_match(match_id: int) -> list[tuple[User, Prediction]]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.*, p.id AS p_id, p.user_id AS p_user_id, p.match_id AS p_match_id,
+                   p.home_score AS p_home_score, p.away_score AS p_away_score,
+                   p.points AS p_points, p.is_doubled AS p_is_doubled
+            FROM predictions p
+            INNER JOIN users u ON u.id = p.user_id
+            WHERE p.match_id = ?
+            ORDER BY u.display_name ASC
+            """,
+            (match_id,),
+        ).fetchall()
+
+    results: list[tuple[User, Prediction]] = []
+    for row in rows:
+        user = User(
+            id=row["id"],
+            telegram_id=row["telegram_id"],
+            username=row["username"],
+            display_name=row["display_name"],
+        )
+        prediction = Prediction(
+            id=row["p_id"],
+            user_id=row["p_user_id"],
+            match_id=row["p_match_id"],
+            home_score=row["p_home_score"],
+            away_score=row["p_away_score"],
+            points=row["p_points"],
+            is_doubled=bool(_row_get(row, "p_is_doubled", 0)),
+        )
+        results.append((user, prediction))
+    return results
+
+
 def get_user_predictions(user_id: int) -> list[tuple[Prediction, Match]]:
     with get_db() as conn:
         rows = conn.execute(
