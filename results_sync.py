@@ -142,6 +142,28 @@ def _find_match_id(home_ar: str, away_ar: str, iso_date: str) -> int | None:
                 return int(row["id"])
         if rows:
             return int(rows[0]["id"])
+
+        from knockout_teams import is_placeholder_team, teams_match_knockout_fixture
+
+        placeholder_rows = conn.execute(
+            """
+            SELECT id, kickoff_at, home_team, away_team
+            FROM matches
+            WHERE kickoff_at LIKE ?
+              AND (home_score IS NULL OR away_score IS NULL)
+            """,
+            (f"{iso_date}%",),
+        ).fetchall()
+        for row in placeholder_rows:
+            if not (
+                is_placeholder_team(row["home_team"])
+                or is_placeholder_team(row["away_team"])
+            ):
+                continue
+            if teams_match_knockout_fixture(
+                home_ar, away_ar, row["kickoff_at"]
+            ):
+                return int(row["id"])
     return None
 
 
@@ -153,8 +175,40 @@ def _date_keys_around(iso_date: str) -> list[str]:
     return keys
 
 
+def _orient_espn_result_for_match(match, result: dict) -> tuple[str, str, int, int]:
+    """Align ESPN home/away with the fixture slot (group winner vs runner-up, etc.)."""
+    from knockout_teams import (
+        _fixture_for_kickoff,
+        participant_pools_for_placeholder,
+    )
+    from teams_ar import normalize_team_name
+
+    fixture = _fixture_for_kickoff(match.kickoff_at)
+    if not fixture:
+        return (
+            result["home_ar"],
+            result["away_ar"],
+            result["home_score"],
+            result["away_score"],
+        )
+
+    home_ar = normalize_team_name(result["home_ar"])
+    away_ar = normalize_team_name(result["away_ar"])
+    home_pool = participant_pools_for_placeholder(fixture.home)
+    away_pool = participant_pools_for_placeholder(fixture.away)
+    if home_pool and away_pool:
+        if home_ar in home_pool and away_ar in away_pool:
+            return home_ar, away_ar, result["home_score"], result["away_score"]
+        if away_ar in home_pool and home_ar in away_pool:
+            return away_ar, home_ar, result["away_score"], result["home_score"]
+
+    return home_ar, away_ar, result["home_score"], result["away_score"]
+
+
 def restore_match_result_from_espn(match_id: int) -> bool:
     """Import a finished score for one match (used after admin reopen)."""
+    from knockout_teams import is_placeholder_team, teams_match_knockout_fixture
+
     match = get_match(match_id)
     if not match or not match.kickoff_at:
         return False
@@ -166,14 +220,37 @@ def restore_match_result_from_espn(match_id: int) -> bool:
         for result in _fetch_scoreboard(date_key):
             found_id = _find_match_id(result["home_ar"], result["away_ar"], result["date"])
             if found_id != match_id:
-                continue
-            updated = set_match_result(match_id, result["home_score"], result["away_score"])
+                if found_id is not None:
+                    continue
+                if not (
+                    is_placeholder_team(match.home_team)
+                    or is_placeholder_team(match.away_team)
+                ):
+                    continue
+                if not teams_match_knockout_fixture(
+                    result["home_ar"],
+                    result["away_ar"],
+                    match.kickoff_at,
+                ):
+                    continue
+            home_team, away_team, home_score, away_score = _orient_espn_result_for_match(
+                match, result
+            )
+            updated = set_match_result(
+                match_id,
+                home_score,
+                away_score,
+                home_team=home_team,
+                away_team=away_team,
+            )
             if updated:
                 logger.info(
-                    "Restored ESPN result for match #%d: %d-%d",
+                    "Restored ESPN result for match #%d: %s vs %s %d-%d",
                     match_id,
-                    result["home_score"],
-                    result["away_score"],
+                    home_team,
+                    away_team,
+                    home_score,
+                    away_score,
                 )
                 return True
     return False
@@ -260,7 +337,23 @@ def sync_match_results_from_espn(days_back: int = 60, days_ahead: int = 1) -> di
 
                 rescored += rescore_match_predictions(match_id)
                 continue
-            match = set_match_result(match_id, result["home_score"], result["away_score"])
+            home_team, away_team, home_score, away_score = (
+                _orient_espn_result_for_match(match, result)
+                if match
+                else (
+                    result["home_ar"],
+                    result["away_ar"],
+                    result["home_score"],
+                    result["away_score"],
+                )
+            )
+            match = set_match_result(
+                match_id,
+                home_score,
+                away_score,
+                home_team=home_team,
+                away_team=away_team,
+            )
             if match:
                 updated += 1
 

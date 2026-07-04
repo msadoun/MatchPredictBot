@@ -1129,18 +1129,36 @@ def open_match(match_id: int, *, clear_result: bool = False) -> Match | None:
     return get_match(match_id)
 
 
-def set_match_result(match_id: int, home_score: int, away_score: int) -> Match | None:
+def set_match_result(
+    match_id: int,
+    home_score: int,
+    away_score: int,
+    *,
+    home_team: str | None = None,
+    away_team: str | None = None,
+) -> Match | None:
     existing = get_match(match_id)
     keep_open = bool(existing and existing.predictions_override)
     with get_db() as conn:
-        conn.execute(
-            """
-            UPDATE matches
-            SET home_score = ?, away_score = ?, is_open = ?
-            WHERE id = ?
-            """,
-            (home_score, away_score, int(keep_open), match_id),
-        )
+        if home_team is not None and away_team is not None:
+            conn.execute(
+                """
+                UPDATE matches
+                SET home_score = ?, away_score = ?, is_open = ?,
+                    home_team = ?, away_team = ?
+                WHERE id = ?
+                """,
+                (home_score, away_score, int(keep_open), home_team, away_team, match_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE matches
+                SET home_score = ?, away_score = ?, is_open = ?
+                WHERE id = ?
+                """,
+                (home_score, away_score, int(keep_open), match_id),
+            )
         predictions = conn.execute(
             "SELECT id, home_score, away_score, is_doubled FROM predictions WHERE match_id = ?",
             (match_id,),

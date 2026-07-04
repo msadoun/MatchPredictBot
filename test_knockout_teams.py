@@ -173,26 +173,61 @@ def test_english_match_winner_placeholder_resolves():
     assert normalize_team_name("Match Winner 75") == "فائز م٧٥"
 
     matches = [
-        _fifa_match(75, 75, home="Netherlands", away="Scotland", hs=2, aws=1),
+        _fifa_match(75, 75, home="Netherlands", away="Morocco", hs=0, aws=1),
         _fifa_match(90, 90, home="Canada", away="Match Winner 75"),
     ]
     updates = resolve_knockout_teams(matches)
-    assert updates[90] == ("كندا", "هولندا")
+    assert updates[90] == ("كندا", "المغرب")
 
     matches = [
-        _fifa_match(74, 74, home="Germany", away="Paraguay", hs=2, aws=1),
+        _fifa_match(74, 74, home="Germany", away="Paraguay", hs=0, aws=1),
         _fifa_match(89, 89, home="Match Winner 74", away="France"),
     ]
     updates = resolve_knockout_teams(matches)
-    assert updates[89] == ("ألمانيا", "فرنسا")
+    assert updates[89] == ("باراغواي", "فرنسا")
 
     matches = [
         _fifa_match(86, 86, home="Argentina", away="Haiti", hs=1, aws=0),
-        _fifa_match(88, 88, home="Turkey", away="Paraguay", hs=0, aws=1),
+        _fifa_match(88, 88, home="Turkey", away="Egypt", hs=0, aws=1),
         _fifa_match(95, 95, home="Argentina", away="Match Winner 88"),
     ]
     updates = resolve_knockout_teams(matches)
-    assert updates[95] == ("الأرجنتين", "باراغواي")
+    assert updates[95] == ("الأرجنتين", "مصر")
+
+
+def test_feeder_placeholder_with_score_resolves_r16_winner():
+    """R32 row still has placeholders but score + ESPN team names -> R16 names."""
+    matches = [
+        _fifa_match(73, 73, home="Czechia", away="Canada", hs=1, aws=2),
+        _fifa_match(75, 75, hs=0, aws=1),
+        _fifa_match(74, 74, hs=0, aws=1),
+        _fifa_match(77, 77, home="Iraq", away="France", hs=0, aws=1),
+        _fifa_match(86, 86, home="Argentina", away="Haiti", hs=2, aws=0),
+        _fifa_match(88, 88, hs=0, aws=1),
+        _fifa_match(90, 90, home="Canada", away="Match Winner 75"),
+        _fifa_match(89, 89, home="Match Winner 74", away="France"),
+        _fifa_match(95, 95, home="Argentina", away="Match Winner 88"),
+    ]
+    # Apply real team names as ESPN import would
+    matches[1].home_team = "هولندا"
+    matches[1].away_team = "المغرب"
+    matches[2].home_team = "ألمانيا"
+    matches[2].away_team = "باراغواي"
+    matches[5].home_team = "تركيا"
+    matches[5].away_team = "مصر"
+
+    updates = resolve_knockout_teams(matches)
+    assert updates[90] == ("كندا", "المغرب")
+    assert updates[89] == ("باراغواي", "فرنسا")
+    assert updates[95] == ("الأرجنتين", "مصر")
+
+
+def test_teams_match_knockout_fixture_for_morocco_netherlands():
+    from knockout_teams import teams_match_knockout_fixture
+
+    kickoff = kickoff_label(WORLD_CUP_2026_FIXTURES[74])
+    assert teams_match_knockout_fixture("هولندا", "المغرب", kickoff)
+    assert teams_match_knockout_fixture("المغرب", "هولندا", kickoff)
 
 
 def test_r16_names_resolve_after_all_r32_results():

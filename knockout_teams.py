@@ -108,6 +108,67 @@ def _fixture_for_kickoff(kickoff_at: str | None):
     return _KICKOFF_TO_FIXTURE.get(kickoff_at)
 
 
+def participant_pools_for_placeholder(name: str) -> set[str] | None:
+    """Possible teams for a knockout placeholder label."""
+    from teams_ar import normalize_team_name
+
+    name = normalize_team_name(name.strip())
+    group_teams = _group_teams()
+    if match := FIRST_IN_GROUP.match(name):
+        group = _group_for_letter(match.group(1))
+        return set(group_teams.get(group or "", ()))
+    if match := SECOND_IN_GROUP.match(name):
+        group = _group_for_letter(match.group(1))
+        return set(group_teams.get(group or "", ()))
+    if match := THIRD_IN_GROUP.match(name):
+        letters = match.group(1).replace(" ", "").split("/")
+        teams: set[str] = set()
+        for letter in letters:
+            group = _group_for_letter(letter)
+            teams.update(group_teams.get(group or "", ()))
+        return teams
+    return None
+
+
+def teams_match_knockout_fixture(home_ar: str, away_ar: str, kickoff_at: str | None) -> bool:
+    """True when ESPN teams can be the two sides of this fixture slot."""
+    from teams_ar import normalize_team_name
+
+    fixture = _fixture_for_kickoff(kickoff_at)
+    if not fixture:
+        return False
+
+    home_ar = normalize_team_name(home_ar)
+    away_ar = normalize_team_name(away_ar)
+    teams = {home_ar, away_ar}
+
+    home_pool = participant_pools_for_placeholder(fixture.home)
+    away_pool = participant_pools_for_placeholder(fixture.away)
+    if home_pool is not None and away_pool is not None:
+        return (
+            (home_ar in home_pool and away_ar in away_pool)
+            or (away_ar in home_pool and home_ar in away_pool)
+        )
+
+    if not is_placeholder_team(fixture.home) and not is_placeholder_team(fixture.away):
+        return teams == {fixture.home, fixture.away}
+
+    return False
+
+
+def _fixture_participant_names(row: object) -> tuple[str, str]:
+    """Canonical fixture placeholders for a row (stable even after partial DB sync)."""
+    fixture = _fixture_for_kickoff(getattr(row, "kickoff_at", None))
+    if fixture:
+        return fixture.home, fixture.away
+    from teams_ar import normalize_team_name
+
+    return (
+        normalize_team_name(row.home_team),
+        normalize_team_name(row.away_team),
+    )
+
+
 def _third_place_home_context(row: object) -> str:
     """Use the canonical fixture home (e.g. أول المجموعة ط) for third-place slot lookup."""
     fixture = _fixture_for_kickoff(getattr(row, "kickoff_at", None))
@@ -323,14 +384,14 @@ class _Resolver:
             self.cache[name] = resolved
         return resolved
 
-    def _resolved_away(self, row: object) -> str | None:
+    def _resolved_away(self, row: object, *, home_name: str) -> str | None:
         from teams_ar import normalize_team_name
 
         away_name = normalize_team_name(row.away_team.strip())
         if THIRD_IN_GROUP.match(away_name):
             return self.resolve(
                 away_name,
-                winner_home=_third_place_home_context(row),
+                winner_home=home_name,
             )
         return self.resolve(away_name)
 
@@ -346,8 +407,17 @@ class _Resolver:
         if hs == aws:
             return None
 
-        home = self.resolve(normalize_team_name(row.home_team))
-        away = self._resolved_away(row)
+        fixture_home, fixture_away = _fixture_participant_names(row)
+        db_home = normalize_team_name(row.home_team)
+        db_away = normalize_team_name(row.away_team)
+        home_name = fixture_home if is_placeholder_team(db_home) else db_home
+        away_name = fixture_away if is_placeholder_team(db_away) else db_away
+
+        home = self.resolve(home_name)
+        if THIRD_IN_GROUP.match(away_name.strip()):
+            away = self.resolve(away_name, winner_home=_third_place_home_context(row))
+        else:
+            away = self.resolve(away_name)
         home_won = hs > aws
         if want_winner:
             chosen = home if home_won else away
