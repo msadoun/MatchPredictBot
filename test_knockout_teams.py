@@ -167,6 +167,34 @@ def test_third_place_winner_resolves_after_home_team_synced(monkeypatch):
     assert updates[89] == ("ألمانيا", "تونس")
 
 
+def test_english_match_winner_placeholder_resolves():
+    from teams_ar import normalize_team_name
+
+    assert normalize_team_name("Match Winner 75") == "فائز م٧٥"
+
+    matches = [
+        _fifa_match(75, 75, home="Netherlands", away="Scotland", hs=2, aws=1),
+        _fifa_match(90, 90, home="Canada", away="Match Winner 75"),
+    ]
+    updates = resolve_knockout_teams(matches)
+    assert updates[90] == ("كندا", "هولندا")
+
+    matches = [
+        _fifa_match(74, 74, home="Germany", away="Paraguay", hs=2, aws=1),
+        _fifa_match(89, 89, home="Match Winner 74", away="France"),
+    ]
+    updates = resolve_knockout_teams(matches)
+    assert updates[89] == ("ألمانيا", "فرنسا")
+
+    matches = [
+        _fifa_match(86, 86, home="Argentina", away="Haiti", hs=1, aws=0),
+        _fifa_match(88, 88, home="Turkey", away="Paraguay", hs=0, aws=1),
+        _fifa_match(95, 95, home="Argentina", away="Match Winner 88"),
+    ]
+    updates = resolve_knockout_teams(matches)
+    assert updates[95] == ("الأرجنتين", "باراغواي")
+
+
 def test_r16_names_resolve_after_all_r32_results():
     matches = []
     for fifa_number, fixture in enumerate(WORLD_CUP_2026_FIXTURES, start=1):

@@ -11,6 +11,7 @@ from database import (
     count_matches,
     ensure_world_cup_seeded,
     init_db,
+    migrate_team_names_to_arabic,
     purge_legacy_km3na_group,
     clear_legacy_km3na_manual_points,
     score_all_finished_matches,
@@ -253,6 +254,20 @@ def main() -> None:
             logger.info("Resolved knockout team names on %d match(es)", resolved)
     except Exception as exc:
         logger.warning("Knockout team sync failed: %s", exc)
+    try:
+        migrated = migrate_team_names_to_arabic()
+        if migrated["updated"]:
+            logger.info("Migrated %d match team name(s) to Arabic", migrated["updated"])
+            from knockout_teams import sync_knockout_team_names
+
+            resolved = sync_knockout_team_names()
+            if resolved:
+                logger.info(
+                    "Resolved knockout team names after migration on %d match(es)",
+                    resolved,
+                )
+    except Exception as exc:
+        logger.warning("Team name migration failed: %s", exc)
     try:
         stats = score_all_finished_matches()
         if stats["results_updated"]:

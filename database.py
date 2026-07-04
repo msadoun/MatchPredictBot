@@ -1055,7 +1055,7 @@ def sync_match_open_flags() -> int:
 
 
 def migrate_team_names_to_arabic() -> dict[str, int]:
-    from teams_ar import GROUP_EN_TO_AR, TEAM_EN_TO_AR
+    from teams_ar import GROUP_EN_TO_AR, normalize_team_name
 
     updated = 0
     with get_db() as conn:
@@ -1063,8 +1063,8 @@ def migrate_team_names_to_arabic() -> dict[str, int]:
             "SELECT id, home_team, away_team, kickoff_at FROM matches"
         ).fetchall()
         for row in rows:
-            home = TEAM_EN_TO_AR.get(row["home_team"], row["home_team"])
-            away = TEAM_EN_TO_AR.get(row["away_team"], row["away_team"])
+            home = normalize_team_name(row["home_team"])
+            away = normalize_team_name(row["away_team"])
             kickoff = row["kickoff_at"]
             if kickoff and " · " in kickoff:
                 date_part, group_part = kickoff.split(" · ", 1)

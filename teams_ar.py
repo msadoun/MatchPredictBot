@@ -1,5 +1,15 @@
 # English team names -> Arabic (for DB migration)
 
+import re
+
+_ARABIC_INDIC = "٠١٢٣٤٥٦٧٨٩"
+
+_MATCH_WINNER_EN = re.compile(r"^Match Winner (\d+)$", re.IGNORECASE)
+_MATCH_N_WINNER_EN = re.compile(r"^Match (\d+) Winner$", re.IGNORECASE)
+_WINNER_M_EN = re.compile(r"^Winner M(\d+)$", re.IGNORECASE)
+_MATCH_N_LOSER_EN = re.compile(r"^Match (\d+) Loser$", re.IGNORECASE)
+_RUNNER_UP_M_EN = re.compile(r"^Runner-up M(\d+)$", re.IGNORECASE)
+
 TEAM_EN_TO_AR: dict[str, str] = {
     "Mexico": "المكسيك",
     "South Africa": "جنوب أفريقيا",
@@ -136,3 +146,43 @@ GROUP_EN_TO_AR: dict[str, str] = {
     "3rd place": "مباراة المركز الثالث",
     "Final": "النهائي",
 }
+
+
+def _arabic_indic_number(value: int) -> str:
+    return "".join(_ARABIC_INDIC[int(digit)] for digit in str(value))
+
+
+def _arabic_winner_placeholder(match_number: int) -> str:
+    return f"فائز م{_arabic_indic_number(match_number)}"
+
+
+def _arabic_runner_up_placeholder(match_number: int) -> str:
+    return f"وصيف م{_arabic_indic_number(match_number)}"
+
+
+def normalize_team_name(name: str) -> str:
+    """Map English team/placeholder spellings to canonical Arabic."""
+    text = name.strip()
+    if not text:
+        return text
+    if text in TEAM_EN_TO_AR:
+        return TEAM_EN_TO_AR[text]
+
+    from worldcup_kickoffs import _EN_ALIASES
+
+    aliased = _EN_ALIASES.get(text, text)
+    if aliased in TEAM_EN_TO_AR:
+        return TEAM_EN_TO_AR[aliased]
+
+    if match := _MATCH_WINNER_EN.match(text):
+        return _arabic_winner_placeholder(int(match.group(1)))
+    if match := _MATCH_N_WINNER_EN.match(text):
+        return _arabic_winner_placeholder(int(match.group(1)))
+    if match := _WINNER_M_EN.match(text):
+        return _arabic_winner_placeholder(int(match.group(1)))
+    if match := _MATCH_N_LOSER_EN.match(text):
+        return _arabic_runner_up_placeholder(int(match.group(1)))
+    if match := _RUNNER_UP_M_EN.match(text):
+        return _arabic_runner_up_placeholder(int(match.group(1)))
+
+    return text

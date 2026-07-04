@@ -38,7 +38,9 @@ RUNNER_UP_OF = re.compile(r"^وصيف م([\d٠-٩]+)$")
 
 
 def is_placeholder_team(name: str) -> bool:
-    name = name.strip()
+    from teams_ar import normalize_team_name
+
+    name = normalize_team_name(name.strip())
     return bool(
         FIRST_IN_GROUP.match(name)
         or SECOND_IN_GROUP.match(name)
@@ -86,7 +88,12 @@ def _canonical_team_lookup() -> dict[str, str]:
 
 
 def _canonical_team_name(name: str) -> str:
-    return _canonical_team_lookup().get(name.strip(), name.strip())
+    from teams_ar import normalize_team_name
+
+    return _canonical_team_lookup().get(
+        normalize_team_name(name.strip()),
+        normalize_team_name(name.strip()),
+    )
 
 
 _KICKOFF_TO_FIXTURE: dict[str, object] = {}
@@ -114,6 +121,8 @@ def _third_place_home_context(row: object) -> str:
 
 def build_fifa_match_map(matches: list) -> dict[int, object]:
     """Map FIFA fixture numbers (1–104) to DB rows via kickoff time."""
+    from teams_ar import normalize_team_name
+
     by_kickoff: dict[str, list[object]] = defaultdict(list)
     for match in matches:
         if match.kickoff_at:
@@ -131,7 +140,8 @@ def build_fifa_match_map(matches: list) -> dict[int, object]:
         exact = [
             match
             for match in candidates
-            if match.home_team == fixture.home and match.away_team == fixture.away
+            if normalize_team_name(match.home_team) == fixture.home
+            and normalize_team_name(match.away_team) == fixture.away
         ]
         if len(exact) == 1:
             fifa_map[fifa_number] = exact[0]
@@ -278,7 +288,11 @@ class _Resolver:
     cache: dict[str, str] = field(default_factory=dict)
 
     def resolve(self, name: str, *, winner_home: str | None = None) -> str | None:
-        name = name.strip()
+        from teams_ar import normalize_team_name
+
+        name = normalize_team_name(name.strip())
+        if winner_home is not None:
+            winner_home = normalize_team_name(winner_home.strip())
         if not is_placeholder_team(name):
             return name
         if name in self.cache:
@@ -310,15 +324,19 @@ class _Resolver:
         return resolved
 
     def _resolved_away(self, row: object) -> str | None:
-        away_name = row.away_team.strip()
+        from teams_ar import normalize_team_name
+
+        away_name = normalize_team_name(row.away_team.strip())
         if THIRD_IN_GROUP.match(away_name):
             return self.resolve(
-                row.away_team,
+                away_name,
                 winner_home=_third_place_home_context(row),
             )
-        return self.resolve(row.away_team)
+        return self.resolve(away_name)
 
     def _match_participant(self, fifa_number: int, *, want_winner: bool) -> str | None:
+        from teams_ar import normalize_team_name
+
         row = self.matches_by_fifa.get(fifa_number)
         if not row:
             return None
@@ -328,7 +346,7 @@ class _Resolver:
         if hs == aws:
             return None
 
-        home = self.resolve(row.home_team)
+        home = self.resolve(normalize_team_name(row.home_team))
         away = self._resolved_away(row)
         home_won = hs > aws
         if want_winner:
@@ -340,8 +358,8 @@ class _Resolver:
             return chosen
 
         # Fall back to names already written in the DB (e.g. after a prior sync).
-        winner_side = row.home_team if home_won else row.away_team
-        loser_side = row.away_team if home_won else row.home_team
+        winner_side = normalize_team_name(row.home_team if home_won else row.away_team)
+        loser_side = normalize_team_name(row.away_team if home_won else row.home_team)
         if want_winner:
             if not is_placeholder_team(winner_side):
                 return winner_side
@@ -386,22 +404,25 @@ def _resolved_pair(
     match: object,
     resolver: _Resolver,
 ) -> tuple[str, str]:
-    home = resolver.resolve(match.home_team) or match.home_team
-    away_name = match.away_team
+    from teams_ar import normalize_team_name
+
+    home_name = normalize_team_name(match.home_team)
+    away_name = normalize_team_name(match.away_team)
+    home = resolver.resolve(home_name) or home_name
     if THIRD_IN_GROUP.match(away_name.strip()):
         away = (
             resolver.resolve(
                 away_name,
                 winner_home=_third_place_home_context(match),
             )
-            or match.away_team
+            or away_name
         )
     else:
-        away = resolver.resolve(away_name) or match.away_team
+        away = resolver.resolve(away_name) or away_name
     if is_placeholder_team(home):
-        home = match.home_team
+        home = home_name
     if is_placeholder_team(away):
-        away = match.away_team
+        away = away_name
     return home, away
 
 
