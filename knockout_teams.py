@@ -209,62 +209,112 @@ class _Resolver:
             self.cache[name] = resolved
         return resolved
 
+    def _resolved_away(self, row: object) -> str | None:
+        away_name = row.away_team.strip()
+        if THIRD_IN_GROUP.match(away_name):
+            return self.resolve(row.away_team, winner_home=row.home_team)
+        return self.resolve(row.away_team)
+
     def _match_participant(self, match_id: int, *, want_winner: bool) -> str | None:
         row = self.matches_by_id.get(match_id)
         if not row:
-            return None
-        home = self.resolve(row.home_team)
-        away = self.resolve(row.away_team)
-        if not home or not away:
-            return None
-        if is_placeholder_team(home) or is_placeholder_team(away):
             return None
         if row.home_score is None or row.away_score is None:
             return None
         hs, aws = int(row.home_score), int(row.away_score)
         if hs == aws:
             return None
+
+        home = self.resolve(row.home_team)
+        away = self._resolved_away(row)
         home_won = hs > aws
         if want_winner:
-            return home if home_won else away
-        return away if home_won else home
+            chosen = home if home_won else away
+        else:
+            chosen = away if home_won else home
+
+        if chosen and not is_placeholder_team(chosen):
+            return chosen
+        return None
 
 
-def resolve_knockout_teams(matches: list) -> dict[int, tuple[str, str]]:
-    """Return match_id -> (home_team, away_team) for resolved knockout rows."""
+def build_knockout_resolver(matches: list) -> _Resolver:
     from worldcup_third_place import lookup_third_place_assignments
 
     standings = compute_group_tables(matches)
     qualifying = _qualifying_third_group_letters(standings)
     third_assignments = lookup_third_place_assignments(qualifying) or {}
-    matches_by_id = {int(m.id): m for m in matches}
-    resolver = _Resolver(
+    return _Resolver(
         standings=standings,
-        matches_by_id=matches_by_id,
+        matches_by_id={int(m.id): m for m in matches},
         third_assignments=third_assignments,
     )
+
+
+def _resolved_pair(
+    match: object,
+    resolver: _Resolver,
+) -> tuple[str, str]:
+    home = resolver.resolve(match.home_team) or match.home_team
+    away_name = match.away_team
+    if THIRD_IN_GROUP.match(away_name.strip()):
+        away = resolver.resolve(away_name, winner_home=match.home_team) or match.away_team
+    else:
+        away = resolver.resolve(away_name) or match.away_team
+    if is_placeholder_team(home):
+        home = match.home_team
+    if is_placeholder_team(away):
+        away = match.away_team
+    return home, away
+
+
+def resolved_knockout_display_map(matches: list) -> dict[int, tuple[str, str]]:
+    """Resolved home/away names for every match (knockout placeholders filled when possible)."""
+    resolver = build_knockout_resolver(matches)
+    display: dict[int, tuple[str, str]] = {}
+    for match in matches:
+        stage = stage_from_kickoff(match.kickoff_at)
+        if not stage or is_group_stage_label(stage):
+            display[int(match.id)] = (match.home_team, match.away_team)
+            continue
+        display[int(match.id)] = _resolved_pair(match, resolver)
+    return display
+
+
+def resolve_match_display_teams(
+    match: object,
+    matches: list | None = None,
+    *,
+    display_map: dict[int, tuple[str, str]] | None = None,
+) -> tuple[str, str]:
+    if display_map is not None:
+        return display_map.get(int(match.id), (match.home_team, match.away_team))
+
+    stage = stage_from_kickoff(match.kickoff_at)
+    if not stage or is_group_stage_label(stage):
+        return match.home_team, match.away_team
+
+    if matches is None:
+        from database import list_matches
+
+        matches = list_matches(open_only=False)
+
+    return resolved_knockout_display_map(matches).get(
+        int(match.id),
+        (match.home_team, match.away_team),
+    )
+
+
+def resolve_knockout_teams(matches: list) -> dict[int, tuple[str, str]]:
+    """Return match_id -> (home_team, away_team) for resolved knockout rows."""
+    resolver = build_knockout_resolver(matches)
     updates: dict[int, tuple[str, str]] = {}
 
     for match in sorted(matches, key=lambda m: int(m.id)):
         stage = stage_from_kickoff(match.kickoff_at)
         if not stage or is_group_stage_label(stage):
             continue
-        home = resolver.resolve(match.home_team)
-        away_name = match.away_team
-        if THIRD_IN_GROUP.match(away_name.strip()):
-            away = resolver.resolve(away_name, winner_home=match.home_team)
-        else:
-            away = resolver.resolve(away_name)
-        new_home = (
-            home
-            if home and not is_placeholder_team(home)
-            else match.home_team
-        )
-        new_away = (
-            away
-            if away and not is_placeholder_team(away)
-            else match.away_team
-        )
+        new_home, new_away = _resolved_pair(match, resolver)
         if new_home != match.home_team or new_away != match.away_team:
             updates[int(match.id)] = (new_home, new_away)
     return updates
@@ -301,7 +351,6 @@ def sync_knockout_team_names() -> int:
     """Write resolved team names into the matches table."""
     from database import get_db, list_matches
 
-    refresh_knockout_fixture_names()
     all_matches = list_matches()
     updates = resolve_knockout_teams(all_matches)
     if not updates:
