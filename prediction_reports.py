@@ -283,10 +283,13 @@ def build_match_photo_rows(match: Match) -> list[tuple[str, str, str]]:
 
 
 def format_match_prediction_table(match: Match) -> str:
+    from knockout_teams import resolve_match_display_teams
+
+    home, away = resolve_match_display_teams(match)
     rows = build_match_table_rows(match)
     lines = [
         f"📋 توقعات المباراة #{match.id}",
-        f"{match.home_team} ضد {match.away_team}",
+        f"{home} ضد {away}",
     ]
     if match.kickoff_at:
         lines.append(f"الموعد: {match.kickoff_at}")
