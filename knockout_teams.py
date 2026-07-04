@@ -89,6 +89,29 @@ def _canonical_team_name(name: str) -> str:
     return _canonical_team_lookup().get(name.strip(), name.strip())
 
 
+_KICKOFF_TO_FIXTURE: dict[str, object] = {}
+
+
+def _fixture_for_kickoff(kickoff_at: str | None):
+    if not kickoff_at:
+        return None
+    if not _KICKOFF_TO_FIXTURE:
+        for fixture in WORLD_CUP_2026_FIXTURES:
+            _KICKOFF_TO_FIXTURE[kickoff_label(fixture)] = fixture
+    return _KICKOFF_TO_FIXTURE.get(kickoff_at)
+
+
+def _third_place_home_context(row: object) -> str:
+    """Use the canonical fixture home (e.g. أول المجموعة ط) for third-place slot lookup."""
+    fixture = _fixture_for_kickoff(getattr(row, "kickoff_at", None))
+    if fixture and FIRST_IN_GROUP.match(fixture.home):
+        return fixture.home
+    home = getattr(row, "home_team", "")
+    if FIRST_IN_GROUP.match(home.strip()):
+        return home
+    return home
+
+
 def build_fifa_match_map(matches: list) -> dict[int, object]:
     """Map FIFA fixture numbers (1–104) to DB rows via kickoff time."""
     by_kickoff: dict[str, list[object]] = defaultdict(list)
@@ -289,7 +312,10 @@ class _Resolver:
     def _resolved_away(self, row: object) -> str | None:
         away_name = row.away_team.strip()
         if THIRD_IN_GROUP.match(away_name):
-            return self.resolve(row.away_team, winner_home=row.home_team)
+            return self.resolve(
+                row.away_team,
+                winner_home=_third_place_home_context(row),
+            )
         return self.resolve(row.away_team)
 
     def _match_participant(self, fifa_number: int, *, want_winner: bool) -> str | None:
@@ -319,8 +345,27 @@ class _Resolver:
         if want_winner:
             if not is_placeholder_team(winner_side):
                 return winner_side
-        elif not is_placeholder_team(loser_side):
-            return loser_side
+            if THIRD_IN_GROUP.match(winner_side.strip()):
+                resolved = self.resolve(
+                    winner_side,
+                    winner_home=_third_place_home_context(row),
+                )
+            else:
+                resolved = self.resolve(winner_side)
+            if resolved and not is_placeholder_team(resolved):
+                return resolved
+        else:
+            if not is_placeholder_team(loser_side):
+                return loser_side
+            if THIRD_IN_GROUP.match(loser_side.strip()):
+                resolved = self.resolve(
+                    loser_side,
+                    winner_home=_third_place_home_context(row),
+                )
+            else:
+                resolved = self.resolve(loser_side)
+            if resolved and not is_placeholder_team(resolved):
+                return resolved
         return None
 
 
@@ -344,7 +389,13 @@ def _resolved_pair(
     home = resolver.resolve(match.home_team) or match.home_team
     away_name = match.away_team
     if THIRD_IN_GROUP.match(away_name.strip()):
-        away = resolver.resolve(away_name, winner_home=match.home_team) or match.away_team
+        away = (
+            resolver.resolve(
+                away_name,
+                winner_home=_third_place_home_context(match),
+            )
+            or match.away_team
+        )
     else:
         away = resolver.resolve(away_name) or match.away_team
     if is_placeholder_team(home):

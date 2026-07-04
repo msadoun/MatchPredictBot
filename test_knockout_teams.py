@@ -138,6 +138,35 @@ def test_winner_placeholder_uses_fifa_number_not_db_id():
     assert updates[89][0] == "ألمانيا"
 
 
+def test_third_place_home_context_uses_fixture_placeholder():
+    match = _fifa_match(77, 77, home="فرنسا", away="ثالث (ج/د/و/ز/ح)")
+    from knockout_teams import _third_place_home_context
+
+    assert _third_place_home_context(match) == "أول المجموعة ط"
+
+
+def test_third_place_winner_resolves_after_home_team_synced(monkeypatch):
+    """Third-place winner must resolve even when fixture home was already synced."""
+    monkeypatch.setattr(
+        "knockout_teams._third_place_team_for_slot",
+        lambda slot, assignments, standings: "تونس" if slot == "1Ivs" else None,
+    )
+    matches = [
+        _fifa_match(74, 74, home="ألمانيا", away="باراغواي", hs=2, aws=1),
+        _fifa_match(
+            77,
+            77,
+            home="فرنسا",
+            away="ثالث (ج/د/و/ز/ح)",
+            hs=0,
+            aws=1,
+        ),
+        _fifa_match(89, 89),
+    ]
+    updates = resolve_knockout_teams(matches)
+    assert updates[89] == ("ألمانيا", "تونس")
+
+
 def test_r16_names_resolve_after_all_r32_results():
     matches = []
     for fifa_number, fixture in enumerate(WORLD_CUP_2026_FIXTURES, start=1):
