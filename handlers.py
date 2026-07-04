@@ -1939,6 +1939,15 @@ def _admin_predictions_menu_keyboard() -> InlineKeyboardMarkup:
             ],
             [InlineKeyboardButton(msg.BTN_ADMIN_MATCH_TABLE, callback_data="adminpred:photopick")],
             [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_SAVED, callback_data="adminpred:saved")],
+            [InlineKeyboardButton(msg.BTN_ADMIN_COMMANDS, callback_data="adminpred:commands")],
+        ]
+    )
+
+
+def _admin_commands_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")],
         ]
     )
 
@@ -2219,6 +2228,25 @@ async def admin_predictions_command(
     )
 
 
+async def admin_help_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    await reply_to_user(
+        update,
+        context,
+        msg.ADMIN_COMMANDS_TEXT,
+        reply_markup=_admin_commands_keyboard(),
+        bot_username=BOT_USERNAME,
+    )
+
+
 async def admin_predictions_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -2244,6 +2272,16 @@ async def admin_predictions_callback(
             context,
             msg.ADMIN_PREDICTIONS_MENU,
             reply_markup=_admin_predictions_menu_keyboard(),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    if action == "commands":
+        await edit_or_send_user(
+            update,
+            context,
+            msg.ADMIN_COMMANDS_TEXT,
+            reply_markup=_admin_commands_keyboard(),
             bot_username=BOT_USERNAME,
         )
         return

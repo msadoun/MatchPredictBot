@@ -2,10 +2,10 @@ import asyncio
 import logging
 import sys
 
-from telegram import BotCommand, MenuButtonDefault
+from telegram import BotCommand, BotCommandScopeChat, MenuButtonDefault
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
-from config import BOT_TOKEN, PREDICTION_BACKFILLS
+from config import BOT_TOKEN, PREDICTION_BACKFILLS, ADMIN_USER_IDS
 from database import (
     backfill_match_kickoff_times,
     count_matches,
@@ -23,6 +23,7 @@ from handlers import (
     add_match_command,
     admin_predictions_callback,
     admin_predictions_command,
+    admin_help_command,
     backup_predictions_command,
     close_match_command,
     open_match_command,
@@ -119,6 +120,39 @@ async def post_init(application: Application) -> None:
             BotCommand("help", "المساعدة"),
         ]
     )
+    admin_commands = [
+        BotCommand("adminpredictions", "لوحة المسؤول"),
+        BotCommand("adminhelp", "قائمة أوامر المسؤول"),
+        BotCommand("setresult", "تسجيل نتيجة مباراة"),
+        BotCommand("matchtable", "جدول توقعات مباراة"),
+        BotCommand("matchphoto", "جدول توقعات (قديم)"),
+        BotCommand("allmatches", "كل المباريات"),
+        BotCommand("syncscores", "مزامنة ESPN"),
+        BotCommand("setpoints", "تعديل النقاط"),
+        BotCommand("setgrouppoints", "نقاط المجموعة"),
+        BotCommand("userpoints", "نقاط مستخدم"),
+        BotCommand("setprediction", "تعيين توقع"),
+        BotCommand("broadcast", "رسالة للجميع"),
+        BotCommand("senduser", "رسالة لمستخدم"),
+        BotCommand("openmatch", "فتح مباراة"),
+        BotCommand("closematch", "إغلاق مباراة"),
+        BotCommand("loadworldcup", "تحميل كأس العالم"),
+        BotCommand("importexcel", "استيراد Excel"),
+        BotCommand("backuppredictions", "نسخ احتياطي"),
+        BotCommand("restorepredictions", "استرجاع توقعات"),
+        BotCommand("resetpoints", "تصفير النقاط"),
+        BotCommand("cleargroups", "حذف المجموعات"),
+        BotCommand("clearuserdata", "إعادة ضبط كاملة"),
+        BotCommand("addmatch", "إضافة مباراة"),
+    ]
+    for admin_id in ADMIN_USER_IDS:
+        try:
+            await application.bot.set_my_commands(
+                admin_commands,
+                scope=BotCommandScopeChat(chat_id=admin_id),
+            )
+        except Exception as exc:
+            logger.warning("Admin command menu for %s failed: %s", admin_id, exc)
     try:
         from telegram_backup import send_backup_to_admins
 
@@ -319,6 +353,7 @@ def main() -> None:
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     app.add_handler(CommandHandler("senduser", senduser_command))
     app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))
+    app.add_handler(CommandHandler("adminhelp", admin_help_command))
     app.add_handler(CommandHandler("matchtable", match_table_command))
     app.add_handler(CommandHandler("matchphoto", match_photo_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
