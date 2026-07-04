@@ -169,6 +169,66 @@ def _fixture_participant_names(row: object) -> tuple[str, str]:
     )
 
 
+def _winning_team_from_feeder_row(row: object, resolver: _Resolver) -> str | None:
+    """Winner name from a finished feeder match (DB name or resolved placeholder)."""
+    from teams_ar import normalize_team_name
+
+    if row.home_score is None or row.away_score is None:
+        return None
+    hs, aws = int(row.home_score), int(row.away_score)
+    if hs == aws:
+        return None
+
+    home_won = hs > aws
+    fixture_home, fixture_away = _fixture_participant_names(row)
+    db_home = normalize_team_name(row.home_team)
+    db_away = normalize_team_name(row.away_team)
+
+    if home_won:
+        if not is_placeholder_team(db_home):
+            return db_home
+        return resolver.resolve(fixture_home)
+    if not is_placeholder_team(db_away):
+        return db_away
+    if THIRD_IN_GROUP.match(fixture_away.strip()):
+        return resolver.resolve(
+            fixture_away,
+            winner_home=_third_place_home_context(row),
+        )
+    return resolver.resolve(fixture_away)
+
+
+def _fifa_number_for_row(row: object) -> int | None:
+    if not row.kickoff_at:
+        return None
+    for fifa_number, fixture in enumerate(WORLD_CUP_2026_FIXTURES, start=1):
+        if kickoff_label(fixture) == row.kickoff_at:
+            return fifa_number
+    return None
+
+
+def _resolve_winner_reference(
+    name: str,
+    resolver: _Resolver,
+    matches_by_fifa: dict[int, object],
+) -> str | None:
+    from teams_ar import normalize_team_name
+
+    name = normalize_team_name(name.strip())
+    if match := WINNER_OF.match(name):
+        fifa_number = _parse_match_ref(match.group(1))
+        row = matches_by_fifa.get(fifa_number)
+        if row:
+            winner = _winning_team_from_feeder_row(row, resolver)
+            if winner and not is_placeholder_team(winner):
+                return winner
+        return resolver._match_participant(fifa_number, want_winner=True)
+    if match := RUNNER_UP_OF.match(name):
+        fifa_number = _parse_match_ref(match.group(1))
+        return resolver._match_participant(fifa_number, want_winner=False)
+    return resolver.resolve(name)
+
+
 def _third_place_home_context(row: object) -> str:
     """Use the canonical fixture home (e.g. أول المجموعة ط) for third-place slot lookup."""
     fixture = _fixture_for_kickoff(getattr(row, "kickoff_at", None))
@@ -375,10 +435,14 @@ class _Resolver:
             )
         elif match := WINNER_OF.match(name):
             match_id = _parse_match_ref(match.group(1))
-            resolved = self._match_participant(match_id, want_winner=True)
+            resolved = _resolve_winner_reference(name, self, self.matches_by_fifa)
+            if not resolved:
+                resolved = self._match_participant(match_id, want_winner=True)
         elif match := RUNNER_UP_OF.match(name):
             match_id = _parse_match_ref(match.group(1))
-            resolved = self._match_participant(match_id, want_winner=False)
+            resolved = _resolve_winner_reference(name, self, self.matches_by_fifa)
+            if not resolved:
+                resolved = self._match_participant(match_id, want_winner=False)
 
         if resolved and not is_placeholder_team(resolved):
             self.cache[name] = resolved
@@ -478,8 +542,19 @@ def _resolved_pair(
 
     home_name = normalize_team_name(match.home_team)
     away_name = normalize_team_name(match.away_team)
-    home = resolver.resolve(home_name) or home_name
-    if THIRD_IN_GROUP.match(away_name.strip()):
+    if WINNER_OF.match(home_name) or RUNNER_UP_OF.match(home_name):
+        home = (
+            _resolve_winner_reference(home_name, resolver, resolver.matches_by_fifa)
+            or home_name
+        )
+    else:
+        home = resolver.resolve(home_name) or home_name
+    if WINNER_OF.match(away_name) or RUNNER_UP_OF.match(away_name):
+        away = (
+            _resolve_winner_reference(away_name, resolver, resolver.matches_by_fifa)
+            or away_name
+        )
+    elif THIRD_IN_GROUP.match(away_name.strip()):
         away = (
             resolver.resolve(
                 away_name,
@@ -535,6 +610,8 @@ def resolve_match_display_teams(
 
 def resolve_knockout_teams(matches: list) -> dict[int, tuple[str, str]]:
     """Return match_id -> (home_team, away_team) for resolved knockout rows."""
+    from teams_ar import normalize_team_name
+
     resolver = build_knockout_resolver(matches)
     updates: dict[int, tuple[str, str]] = {}
 
@@ -543,7 +620,10 @@ def resolve_knockout_teams(matches: list) -> dict[int, tuple[str, str]]:
         if not stage or is_group_stage_label(stage):
             continue
         new_home, new_away = _resolved_pair(match, resolver)
-        if new_home != match.home_team or new_away != match.away_team:
+        if (
+            normalize_team_name(new_home) != normalize_team_name(match.home_team)
+            or normalize_team_name(new_away) != normalize_team_name(match.away_team)
+        ):
             updates[int(match.id)] = (new_home, new_away)
     return updates
 
@@ -575,6 +655,42 @@ def refresh_knockout_fixture_names() -> int:
     return changed
 
 
+def apply_r16_team_names_from_feeders() -> int:
+    """Force-write R16 names from feeder match winners (scores required)."""
+    from database import get_db, list_matches
+
+    matches = list_matches(open_only=False)
+    resolver = build_knockout_resolver(matches)
+    fifa_map = resolver.matches_by_fifa
+    changed = 0
+
+    with get_db() as conn:
+        for fifa_number, fixture in enumerate(WORLD_CUP_2026_FIXTURES, start=1):
+            if fixture.group != "دور الـ16":
+                continue
+            row = fifa_map.get(fifa_number)
+            if not row:
+                continue
+            home = _resolve_winner_reference(
+                fixture.home, resolver, fifa_map
+            )
+            away = _resolve_winner_reference(
+                fixture.away, resolver, fifa_map
+            )
+            if not home or not away:
+                continue
+            if is_placeholder_team(home) or is_placeholder_team(away):
+                continue
+            if home == row.home_team and away == row.away_team:
+                continue
+            conn.execute(
+                "UPDATE matches SET home_team = ?, away_team = ? WHERE id = ?",
+                (home, away, int(row.id)),
+            )
+            changed += 1
+    return changed
+
+
 def sync_knockout_team_names() -> int:
     """Write resolved team names into the matches table."""
     from database import get_db, list_matches
@@ -592,4 +708,5 @@ def sync_knockout_team_names() -> int:
                     (home, away, match_id),
                 )
                 changed += 1
+    changed += apply_r16_team_names_from_feeders()
     return changed
