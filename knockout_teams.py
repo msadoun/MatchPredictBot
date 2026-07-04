@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 
-from worldcup2026 import WORLD_CUP_2026_FIXTURES, is_group_stage_label, stage_from_kickoff
+from worldcup2026 import (
+    WORLD_CUP_2026_FIXTURES,
+    is_group_stage_label,
+    kickoff_label,
+    stage_from_kickoff,
+)
 
 _ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 
@@ -54,6 +60,77 @@ def _group_teams() -> dict[str, set[str]]:
     return groups
 
 
+_CANONICAL_TEAM_NAMES: dict[str, str] | None = None
+
+
+def _canonical_team_lookup() -> dict[str, str]:
+    """Map DB/ESPN spellings to canonical Arabic names from the fixture list."""
+    global _CANONICAL_TEAM_NAMES
+    if _CANONICAL_TEAM_NAMES is not None:
+        return _CANONICAL_TEAM_NAMES
+
+    canonical: set[str] = set()
+    for fixture in WORLD_CUP_2026_FIXTURES:
+        if is_group_stage_label(fixture.group):
+            canonical.update({fixture.home, fixture.away})
+
+    lookup: dict[str, str] = {name: name for name in canonical}
+    from teams_ar import TEAM_EN_TO_AR
+
+    for english, arabic in TEAM_EN_TO_AR.items():
+        if arabic in canonical:
+            lookup[english] = arabic
+            lookup[arabic] = arabic
+    _CANONICAL_TEAM_NAMES = lookup
+    return lookup
+
+
+def _canonical_team_name(name: str) -> str:
+    return _canonical_team_lookup().get(name.strip(), name.strip())
+
+
+def build_fifa_match_map(matches: list) -> dict[int, object]:
+    """Map FIFA fixture numbers (1–104) to DB rows via kickoff time."""
+    by_kickoff: dict[str, list[object]] = defaultdict(list)
+    for match in matches:
+        if match.kickoff_at:
+            by_kickoff[match.kickoff_at].append(match)
+
+    fifa_map: dict[int, object] = {}
+    for fifa_number, fixture in enumerate(WORLD_CUP_2026_FIXTURES, start=1):
+        candidates = by_kickoff.get(kickoff_label(fixture), [])
+        if not candidates:
+            continue
+        if len(candidates) == 1:
+            fifa_map[fifa_number] = candidates[0]
+            continue
+
+        exact = [
+            match
+            for match in candidates
+            if match.home_team == fixture.home and match.away_team == fixture.away
+        ]
+        if len(exact) == 1:
+            fifa_map[fifa_number] = exact[0]
+            continue
+        if exact:
+            candidates = exact
+
+        with_results = [
+            match
+            for match in candidates
+            if match.home_score is not None and match.away_score is not None
+        ]
+        if len(with_results) == 1:
+            fifa_map[fifa_number] = with_results[0]
+            continue
+        if with_results:
+            candidates = with_results
+
+        fifa_map[fifa_number] = min(candidates, key=lambda match: int(match.id))
+    return fifa_map
+
+
 @dataclass
 class _TeamStanding:
     team: str
@@ -94,8 +171,8 @@ def compute_group_tables(matches: list) -> dict[str, list[_TeamStanding]]:
         table = tables.get(stage)
         if not table:
             continue
-        home = table.get(match.home_team)
-        away = table.get(match.away_team)
+        home = table.get(_canonical_team_name(match.home_team))
+        away = table.get(_canonical_team_name(match.away_team))
         if not home or not away:
             continue
         hs, aws = int(match.home_score), int(match.away_score)
@@ -173,7 +250,7 @@ def _third_place_team_for_slot(
 @dataclass
 class _Resolver:
     standings: dict[str, list[_TeamStanding]]
-    matches_by_id: dict[int, object]
+    matches_by_fifa: dict[int, object]
     third_assignments: dict[str, str] = field(default_factory=dict)
     cache: dict[str, str] = field(default_factory=dict)
 
@@ -215,8 +292,8 @@ class _Resolver:
             return self.resolve(row.away_team, winner_home=row.home_team)
         return self.resolve(row.away_team)
 
-    def _match_participant(self, match_id: int, *, want_winner: bool) -> str | None:
-        row = self.matches_by_id.get(match_id)
+    def _match_participant(self, fifa_number: int, *, want_winner: bool) -> str | None:
+        row = self.matches_by_fifa.get(fifa_number)
         if not row:
             return None
         if row.home_score is None or row.away_score is None:
@@ -235,6 +312,15 @@ class _Resolver:
 
         if chosen and not is_placeholder_team(chosen):
             return chosen
+
+        # Fall back to names already written in the DB (e.g. after a prior sync).
+        winner_side = row.home_team if home_won else row.away_team
+        loser_side = row.away_team if home_won else row.home_team
+        if want_winner:
+            if not is_placeholder_team(winner_side):
+                return winner_side
+        elif not is_placeholder_team(loser_side):
+            return loser_side
         return None
 
 
@@ -246,7 +332,7 @@ def build_knockout_resolver(matches: list) -> _Resolver:
     third_assignments = lookup_third_place_assignments(qualifying) or {}
     return _Resolver(
         standings=standings,
-        matches_by_id={int(m.id): m for m in matches},
+        matches_by_fifa=build_fifa_match_map(matches),
         third_assignments=third_assignments,
     )
 
@@ -351,17 +437,17 @@ def sync_knockout_team_names() -> int:
     """Write resolved team names into the matches table."""
     from database import get_db, list_matches
 
-    all_matches = list_matches()
-    updates = resolve_knockout_teams(all_matches)
-    if not updates:
-        return 0
-
     changed = 0
-    with get_db() as conn:
-        for match_id, (home, away) in updates.items():
-            conn.execute(
-                "UPDATE matches SET home_team = ?, away_team = ? WHERE id = ?",
-                (home, away, match_id),
-            )
-            changed += 1
+    for _ in range(8):
+        all_matches = list_matches(open_only=False)
+        updates = resolve_knockout_teams(all_matches)
+        if not updates:
+            break
+        with get_db() as conn:
+            for match_id, (home, away) in updates.items():
+                conn.execute(
+                    "UPDATE matches SET home_team = ?, away_team = ? WHERE id = ?",
+                    (home, away, match_id),
+                )
+                changed += 1
     return changed
