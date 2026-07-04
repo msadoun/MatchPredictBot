@@ -691,6 +691,44 @@ def apply_r16_team_names_from_feeders() -> int:
     return changed
 
 
+def apply_known_r16_pairings() -> int:
+    """Write confirmed R16 pairings when placeholders are still showing."""
+    from database import get_db, list_matches
+    from teams_ar import normalize_team_name
+
+    known: dict[int, tuple[str, str]] = {
+        90: ("Canada", "Morocco"),
+        89: ("Paraguay", "France"),
+        95: ("Argentina", "Egypt"),
+    }
+    fifa_map = build_fifa_match_map(list_matches(open_only=False))
+    changed = 0
+    with get_db() as conn:
+        for fifa_number, (home_en, away_en) in known.items():
+            row = fifa_map.get(fifa_number)
+            if not row:
+                continue
+            home = normalize_team_name(home_en)
+            away = normalize_team_name(away_en)
+            current_home = normalize_team_name(row.home_team)
+            current_away = normalize_team_name(row.away_team)
+            if current_home == home and current_away == away:
+                continue
+            if not (
+                is_placeholder_team(row.home_team)
+                or is_placeholder_team(row.away_team)
+                or "Match Winner" in row.home_team
+                or "Match Winner" in row.away_team
+            ):
+                continue
+            conn.execute(
+                "UPDATE matches SET home_team = ?, away_team = ? WHERE id = ?",
+                (home, away, int(row.id)),
+            )
+            changed += 1
+    return changed
+
+
 def sync_knockout_team_names() -> int:
     """Write resolved team names into the matches table."""
     from database import get_db, list_matches
@@ -709,4 +747,5 @@ def sync_knockout_team_names() -> int:
                 )
                 changed += 1
     changed += apply_r16_team_names_from_feeders()
+    changed += apply_known_r16_pairings()
     return changed
