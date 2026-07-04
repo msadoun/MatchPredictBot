@@ -55,6 +55,15 @@ def test_winner_placeholder_resolves_after_result():
     assert updates[89][0] == "المكسيك"
 
 
+def test_winner_resolves_when_loser_still_placeholder():
+    matches = [
+        _match(74, "ألمانيا", "ثالث (أ/ب/ج/د/و)", "دور الـ32", hs=1, aws=0),
+        _match(89, "فائز م٧٤", "فائز م٧٧", "دور الـ16"),
+    ]
+    updates = resolve_knockout_teams(matches)
+    assert updates[89][0] == "ألمانيا"
+
+
 def test_fifa_combination_assigns_paraguay_to_germany_slot():
     from worldcup_third_place import lookup_third_place_assignments
 

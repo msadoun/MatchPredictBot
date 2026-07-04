@@ -73,7 +73,10 @@ def _match_round(match: Match) -> str:
 
 
 def _score_line(match: Match, home_score: int, away_score: int) -> str:
-    return f"{match.home_team} {home_score}-{away_score} {match.away_team}"
+    from knockout_teams import resolve_match_display_teams
+
+    home, away = resolve_match_display_teams(match)
+    return f"{home} {home_score}-{away_score} {away}"
 
 
 def _actual_result(match: Match) -> str:

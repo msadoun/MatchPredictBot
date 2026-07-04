@@ -496,14 +496,45 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await admin_predictions_command(update, context)
 
 
-def format_match(match: db.Match) -> str:
+def _display_teams(match: db.Match) -> tuple[str, str]:
+    from knockout_teams import resolve_match_display_teams
+
+    return resolve_match_display_teams(match)
+
+
+def format_match(
+    match: db.Match,
+    *,
+    display_teams: tuple[str, str] | None = None,
+) -> str:
+    if display_teams is None:
+        from knockout_teams import resolve_match_display_teams
+
+        home, away = resolve_match_display_teams(match)
+    else:
+        home, away = display_teams
     status = msg.STATUS_OPEN if db.match_accepts_predictions(match) else msg.STATUS_CLOSED
-    line = f"#{match.id} {match.home_team} {msg.VS} {match.away_team} ({status})"
+    line = f"#{match.id} {home} {msg.VS} {away} ({status})"
     if match.kickoff_at:
         line += f"\n   {msg.KICKOFF}: {match.kickoff_at}"
     if match.home_score is not None and match.away_score is not None:
         line += f"\n   {msg.RESULT}: {match.home_score}-{match.away_score}"
     return line
+
+
+def _format_match_lines(matches: list[db.Match]) -> list[str]:
+    from knockout_teams import resolved_knockout_display_map
+
+    if not matches:
+        return []
+    display_map = resolved_knockout_display_map(matches)
+    return [
+        format_match(
+            match,
+            display_teams=display_map.get(match.id, (match.home_team, match.away_team)),
+        )
+        for match in matches
+    ]
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -583,7 +614,7 @@ async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    lines = [header] + [format_match(match) for match in matches]
+    lines = [header] + _format_match_lines(matches)
     if total > len(matches):
         lines.append(msg.SHOWING_MATCHES.format(shown=len(matches), total=total))
     await menu_screen_response(update, context, "\n\n".join(lines))
@@ -717,8 +748,7 @@ async def _finalize_prediction(
         )
         return False
 
-    home_team = match.home_team
-    away_team = match.away_team
+    home_team, away_team = _display_teams(match)
 
     if not allow_closed and not db.match_accepts_predictions(match):
         _clear_prediction_state(context, participant.id)
@@ -898,8 +928,9 @@ async def _prompt_score_text(
     context.user_data["prediction_step"] = "entering_score"
     context.user_data["prediction_match_id"] = match.id
     context.user_data["prediction_pick"] = pick
-    context.user_data["prediction_home_team"] = match.home_team
-    context.user_data["prediction_away_team"] = match.away_team
+    home_team, away_team = _display_teams(match)
+    context.user_data["prediction_home_team"] = home_team
+    context.user_data["prediction_away_team"] = away_team
 
     participant = _ensure_participant(update)
     user_id = participant.id if participant else None
@@ -908,8 +939,8 @@ async def _prompt_score_text(
             participant.id,
             match.id,
             pick,
-            match.home_team,
-            match.away_team,
+            home_team,
+            away_team,
         )
     if not context.user_data.get("double_session_edited"):
         _sync_double_from_db(context, user_id, match.id)
@@ -917,18 +948,18 @@ async def _prompt_score_text(
     if pick == "draw":
         text = msg.PICK_DRAW_PROMPT.format(
             id=match.id,
-            home=match.home_team,
+            home=home_team,
             vs=msg.VS,
-            away=match.away_team,
+            away=away_team,
             draw=msg.DRAW,
         )
     else:
-        winner = match.home_team if pick == "home" else match.away_team
+        winner = home_team if pick == "home" else away_team
         text = msg.PICK_WINNER_PROMPT.format(
             id=match.id,
-            home=match.home_team,
+            home=home_team,
             vs=msg.VS,
-            away=match.away_team,
+            away=away_team,
             winner=winner,
         )
 
@@ -977,7 +1008,10 @@ def _match_picker_keyboard(
     matches: list[db.Match],
     user_id: int | None = None,
 ) -> InlineKeyboardMarkup:
+    from knockout_teams import resolved_knockout_display_map
+
     open_matches = [m for m in matches if db.match_accepts_predictions(m)]
+    display_map = resolved_knockout_display_map(open_matches) if open_matches else {}
     rows = [_main_menu_back_row()]
     for match in open_matches:
         prefix = ""
@@ -985,10 +1019,11 @@ def _match_picker_keyboard(
             prefix = "⭐ "
         elif user_id and db.user_has_prediction(user_id, match.id):
             prefix = "✓ "
+        home, away = display_map.get(match.id, (match.home_team, match.away_team))
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"{prefix}#{match.id} {match.home_team} {msg.VS} {match.away_team}",
+                    f"{prefix}#{match.id} {home} {msg.VS} {away}",
                     callback_data=f"pred:match:{match.id}",
                 )
             ]
@@ -1042,9 +1077,10 @@ async def _prompt_winner_pick(
     else:
         _sync_double_from_db(context, user_id, match.id)
 
+    home_team, away_team = _display_teams(match)
     text = (
         msg.MATCH_HEADER.format(
-            id=match.id, home=match.home_team, vs=msg.VS, away=match.away_team
+            id=match.id, home=home_team, vs=msg.VS, away=away_team
         )
         + f"\n\n{msg.WHO_WINS}"
     )
@@ -1054,7 +1090,7 @@ async def _prompt_winner_pick(
         active=bool(context.user_data.get("prediction_doubled", False)),
     )
     keyboard = _winner_keyboard(
-        match.id, match.home_team, match.away_team, user_id, context
+        match.id, home_team, away_team, user_id, context
     )
     if update.callback_query and not is_group_chat(update):
         await edit_or_send_user(
@@ -1224,8 +1260,9 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await query.answer(msg.DOUBLE_DEACTIVATED)
         saved_text = msg.DOUBLE_SAVED_DEACTIVATED
         if match:
+            home, away = _display_teams(match)
             saved_text += (
-                f"\n\n#{match.id} {match.home_team} {msg.VS} {match.away_team}\n"
+                f"\n\n#{match.id} {home} {msg.VS} {away}\n"
                 f"{msg.YOUR_PICK}: {prediction.home_score}-{prediction.away_score}"
             )
         await edit_or_send_user(
@@ -1429,9 +1466,10 @@ async def my_predictions_command(
 
     lines = [msg.YOUR_PREDICTIONS, msg.SCORING_RULES]
     for prediction, match in predictions:
+        home, away = _display_teams(match)
         doubled = " ⭐" if prediction.is_doubled else ""
         line = (
-            f"#{match.id} {match.home_team} {msg.VS} {match.away_team}{doubled}\n"
+            f"#{match.id} {home} {msg.VS} {away}{doubled}\n"
             f"   {msg.YOUR_PICK}: {prediction.home_score}-{prediction.away_score}"
         )
         if prediction.is_doubled:
@@ -1680,7 +1718,7 @@ async def list_all_matches_command(
         )
         return
 
-    lines = [msg.ALL_MATCHES] + [format_match(match) for match in matches]
+    lines = [msg.ALL_MATCHES] + _format_match_lines(matches)
     await reply_to_user(
         update, context, "\n\n".join(lines), bot_username=BOT_USERNAME
     )
@@ -2020,9 +2058,13 @@ def _admin_match_photo_stage_keyboard(context: ContextTypes.DEFAULT_TYPE) -> Inl
 
 
 def _admin_match_photo_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
+    from knockout_teams import resolved_knockout_display_map
+
+    display_map = resolved_knockout_display_map(matches) if matches else {}
     rows: list[list[InlineKeyboardButton]] = []
     for match in matches[:30]:
-        label = f"#{match.id} {match.home_team} {msg.VS} {match.away_team}"
+        home, away = display_map.get(match.id, (match.home_team, match.away_team))
+        label = f"#{match.id} {home} {msg.VS} {away}"
         if len(label) > 60:
             label = label[:57] + "…"
         rows.append(
