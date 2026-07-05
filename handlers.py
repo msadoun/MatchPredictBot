@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 import re
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from user_messaging import edit_or_send_user, is_group_chat, reply_to_user
 
 import prediction_reports as reports
 from user_broadcast import broadcast_message, send_user_message
+
+logger = logging.getLogger(__name__)
 
 
 def is_admin(user_id: int) -> bool:
@@ -477,23 +480,33 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     await query.answer()
     action = query.data.split(":", 1)[1] if ":" in query.data else ""
+    context.args = None
 
-    if action == "matches":
-        await matches_command(update, context)
-    elif action == "predict":
-        await predict_command(update, context)
-    elif action == "cancel":
-        await predict_cancel_command(update, context)
-    elif action == "mypredictions":
-        await my_predictions_command(update, context)
-    elif action == "leaderboard":
-        await leaderboard_command(update, context)
-    elif action == "help":
-        await start_command(update, context)
-    elif action == "main":
-        await _show_main_menu(update, context)
-    elif action == "adminpredictions":
-        await admin_predictions_command(update, context)
+    try:
+        if action == "matches":
+            await matches_command(update, context)
+        elif action == "predict":
+            await predict_command(update, context)
+        elif action == "cancel":
+            await predict_cancel_command(update, context)
+        elif action == "mypredictions":
+            await my_predictions_command(update, context)
+        elif action == "leaderboard":
+            await leaderboard_command(update, context)
+        elif action == "help":
+            await start_command(update, context)
+        elif action == "main":
+            await _show_main_menu(update, context)
+        elif action == "adminpredictions":
+            await admin_predictions_command(update, context)
+    except Exception:
+        logger.exception("menu_callback failed for action=%s", action)
+        await reply_to_user(
+            update,
+            context,
+            "حدث خطأ. جرّب /start ثم اضغط الزر مرة أخرى.",
+            bot_username=BOT_USERNAME,
+        )
 
 
 def _display_teams(match: db.Match) -> tuple[str, str]:
@@ -1004,6 +1017,12 @@ def _winner_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def _truncate_button_label(label: str, max_len: int = 60) -> str:
+    if len(label) <= max_len:
+        return label
+    return label[: max_len - 1] + "…"
+
+
 def _match_picker_keyboard(
     matches: list[db.Match],
     user_id: int | None = None,
@@ -1023,7 +1042,7 @@ def _match_picker_keyboard(
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"{prefix}#{match.id} {home} {msg.VS} {away}",
+                    _truncate_button_label(f"{prefix}#{match.id} {home} {msg.VS} {away}"),
                     callback_data=f"pred:match:{match.id}",
                 )
             ]
@@ -1520,6 +1539,7 @@ STALE_KEYBOARD_LABELS = {
     "المباريات",
     "المتصدرين",
     "توقعاتي",
+    "📋 تقارير التوقعات",
     msg.BTN_MATCHES,
     msg.BTN_PREDICT,
     msg.BTN_MY_PREDICTIONS,
@@ -1538,12 +1558,34 @@ async def stale_keyboard_handler(
         return
     if not update.message or not update.message.text:
         return
-    if update.message.text.strip() not in STALE_KEYBOARD_LABELS:
+    label = update.message.text.strip()
+    if label not in STALE_KEYBOARD_LABELS:
         return
     if context.user_data.get("prediction_step") == "entering_score":
         return
 
-    await start_command(update, context)
+    context.args = None
+    routes = {
+        "⚽ توقع": predict_command,
+        "توقع": predict_command,
+        msg.BTN_PREDICT: predict_command,
+        "📅 المباريات": matches_command,
+        "المباريات": matches_command,
+        msg.BTN_MATCHES: matches_command,
+        "🏆 المتصدرين": leaderboard_command,
+        "المتصدرين": leaderboard_command,
+        msg.BTN_LEADERBOARD: leaderboard_command,
+        "📋 توقعاتي": my_predictions_command,
+        "توقعاتي": my_predictions_command,
+        msg.BTN_MY_PREDICTIONS: my_predictions_command,
+        msg.BTN_CANCEL: predict_cancel_command,
+        msg.BTN_HELP: help_command,
+        msg.BTN_BACK_MENU: _show_main_menu,
+        msg.BTN_ADMIN_PREDICTIONS: admin_predictions_command,
+        "📋 تقارير التوقعات": admin_predictions_command,
+    }
+    handler = routes.get(label, start_command)
+    await handler(update, context)
 
 
 async def add_match_command(
@@ -1940,6 +1982,7 @@ def _admin_predictions_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(msg.BTN_ADMIN_MATCH_TABLE, callback_data="adminpred:photopick")],
             [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_SAVED, callback_data="adminpred:saved")],
             [InlineKeyboardButton(msg.BTN_ADMIN_COMMANDS, callback_data="adminpred:commands")],
+            [InlineKeyboardButton(msg.BTN_BACK_MENU, callback_data="menu:main")],
         ]
     )
 

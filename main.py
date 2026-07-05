@@ -109,18 +109,17 @@ async def _run_prediction_backups(application: Application) -> None:
 
 async def post_init(application: Application) -> None:
     await application.bot.set_chat_menu_button(menu_button=MenuButtonDefault())
-    await application.bot.set_my_commands(
-        [
-            BotCommand("start", "بدء البوت"),
-            BotCommand("predict", "توقع نتيجة مباراة"),
-            BotCommand("matches", "مباريات اليوم"),
-            BotCommand("leaderboard", "لوحة المتصدرين"),
-            BotCommand("mypredictions", "توقعاتك"),
-            BotCommand("cancel", "إلغاء التوقع الحالي"),
-            BotCommand("help", "المساعدة"),
-        ]
-    )
-    admin_commands = [
+    user_commands = [
+        BotCommand("start", "بدء البوت"),
+        BotCommand("predict", "توقع نتيجة مباراة"),
+        BotCommand("matches", "مباريات اليوم"),
+        BotCommand("leaderboard", "لوحة المتصدرين"),
+        BotCommand("mypredictions", "توقعاتك"),
+        BotCommand("cancel", "إلغاء التوقع الحالي"),
+        BotCommand("help", "المساعدة"),
+    ]
+    await application.bot.set_my_commands(user_commands)
+    admin_only_commands = [
         BotCommand("adminpredictions", "لوحة المسؤول"),
         BotCommand("adminhelp", "قائمة أوامر المسؤول"),
         BotCommand("setresult", "تسجيل نتيجة مباراة"),
@@ -145,10 +144,14 @@ async def post_init(application: Application) -> None:
         BotCommand("clearuserdata", "إعادة ضبط كاملة"),
         BotCommand("addmatch", "إضافة مباراة"),
     ]
+    admin_user_ids = {cmd.command for cmd in user_commands}
+    merged_admin_commands = user_commands + [
+        cmd for cmd in admin_only_commands if cmd.command not in admin_user_ids
+    ]
     for admin_id in ADMIN_USER_IDS:
         try:
             await application.bot.set_my_commands(
-                admin_commands,
+                merged_admin_commands,
                 scope=BotCommandScopeChat(chat_id=admin_id),
             )
         except Exception as exc:
