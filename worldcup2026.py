@@ -37,6 +37,15 @@ def kickoff_datetime(kickoff_at: str) -> datetime:
     return datetime.fromisoformat(date_part)
 
 
+def safe_kickoff_datetime(kickoff_at: str | None) -> datetime | None:
+    if not kickoff_at:
+        return None
+    try:
+        return kickoff_datetime(kickoff_at)
+    except (ValueError, TypeError):
+        return None
+
+
 def kickoff_deadline(kickoff_at: str) -> datetime:
     return kickoff_datetime(kickoff_at)
 

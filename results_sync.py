@@ -258,7 +258,7 @@ def restore_match_result_from_espn(match_id: int) -> bool:
 
 def import_results_for_finished_matches() -> int:
     """Import ESPN scores for started matches that still have no result."""
-    from worldcup2026 import kickoff_datetime
+    from worldcup2026 import safe_kickoff_datetime
 
     now = datetime.utcnow()
     updated = 0
@@ -275,7 +275,8 @@ def import_results_for_finished_matches() -> int:
         match = get_match(int(row["id"]))
         if not match or not match.kickoff_at:
             continue
-        if kickoff_datetime(match.kickoff_at) > now:
+        kickoff = safe_kickoff_datetime(match.kickoff_at)
+        if kickoff is None or kickoff > now:
             continue
         if restore_match_result_from_espn(int(row["id"])):
             updated += 1

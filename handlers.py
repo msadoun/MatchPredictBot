@@ -15,7 +15,7 @@ from group_standings import (
     PREDEFINED_GROUP_STANDINGS,
     group_display_name,
 )
-from user_messaging import edit_or_send_user, is_group_chat, reply_to_user
+from user_messaging import edit_or_send_user, is_group_chat, reply_to_user, send_chunked_user_text, SAFE_TEXT_CHUNK
 
 import prediction_reports as reports
 from user_broadcast import broadcast_message, send_user_message
@@ -458,6 +458,15 @@ async def user_response(
     if isinstance(reply_markup, InlineKeyboardMarkup) or reply_markup is None:
         reply_markup = _ensure_back_button(
             text, reply_markup, skip=skip_back_button
+        )
+    if len(text) > SAFE_TEXT_CHUNK:
+        return await send_chunked_user_text(
+            update,
+            context,
+            text,
+            reply_markup,
+            bot_username=bot_username,
+            prefer_edit=bool(update.callback_query and not is_group_chat(update)),
         )
     if update.callback_query and not is_group_chat(update):
         return await edit_or_send_user(
@@ -1483,9 +1492,14 @@ async def my_predictions_command(
         await menu_screen_response(update, context, msg.NO_PREDICTIONS)
         return
 
+    from knockout_teams import resolve_match_display_teams, resolved_knockout_display_map
+
+    matches = [match for _, match in predictions]
+    display_map = resolved_knockout_display_map(matches)
+
     lines = [msg.YOUR_PREDICTIONS, msg.SCORING_RULES]
     for prediction, match in predictions:
-        home, away = _display_teams(match)
+        home, away = resolve_match_display_teams(match, display_map=display_map)
         doubled = " ⭐" if prediction.is_doubled else ""
         line = (
             f"#{match.id} {home} {msg.VS} {away}{doubled}\n"

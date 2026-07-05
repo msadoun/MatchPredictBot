@@ -874,12 +874,13 @@ def count_matches(open_only: bool = False, on_date: str | None = None) -> int:
 
 
 def match_has_started(match: Match, *, now: datetime | None = None) -> bool:
-    if not match.kickoff_at:
-        return False
-    from worldcup2026 import kickoff_datetime
+    from worldcup2026 import safe_kickoff_datetime
 
+    kickoff = safe_kickoff_datetime(match.kickoff_at)
+    if kickoff is None:
+        return False
     check = now or datetime.utcnow()
-    return kickoff_datetime(match.kickoff_at) <= check
+    return kickoff <= check
 
 
 def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
@@ -1025,7 +1026,7 @@ def _row_get(row: sqlite3.Row, key: str, default: object = None) -> object:
 
 
 def sync_match_open_flags() -> int:
-    from worldcup2026 import kickoff_datetime
+    from worldcup2026 import safe_kickoff_datetime
 
     now = datetime.utcnow()
     updated = 0
@@ -1044,7 +1045,8 @@ def sync_match_open_flags() -> int:
             elif not row["kickoff_at"]:
                 should_open = True
             else:
-                should_open = kickoff_datetime(row["kickoff_at"]) > now
+                kickoff = safe_kickoff_datetime(row["kickoff_at"])
+                should_open = True if kickoff is None else kickoff > now
             if bool(row["is_open"]) != should_open:
                 conn.execute(
                     "UPDATE matches SET is_open = ? WHERE id = ?",
