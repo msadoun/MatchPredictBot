@@ -230,6 +230,26 @@ def test_teams_match_knockout_fixture_for_morocco_netherlands():
     assert teams_match_knockout_fixture("المغرب", "هولندا", kickoff)
 
 
+def test_quarter_final_argentina_vs_switzerland():
+    """QF (FIFA 100): Argentina vs winner of M96 -> Switzerland."""
+    from teams_ar import normalize_team_name
+
+    matches = [
+        _fifa_match(100, 200, home="Argentina", away="Match Winner 96"),
+    ]
+    display = resolved_knockout_display_map(matches)
+    assert display[200] == (
+        normalize_team_name("Argentina"),
+        normalize_team_name("Switzerland"),
+    )
+
+    updates = resolve_knockout_teams(matches)
+    assert updates[200] == (
+        normalize_team_name("Argentina"),
+        normalize_team_name("Switzerland"),
+    )
+
+
 def test_r16_names_resolve_after_all_r32_results():
     matches = []
     for fifa_number, fixture in enumerate(WORLD_CUP_2026_FIXTURES, start=1):

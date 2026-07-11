@@ -36,6 +36,21 @@ THIRD_IN_GROUP = re.compile(r"^ثالث \(([^)]+)\)$")
 WINNER_OF = re.compile(r"^فائز م([\d٠-٩]+)$")
 RUNNER_UP_OF = re.compile(r"^وصيف م([\d٠-٩]+)$")
 
+# FIFA fixture number -> (home_en, away_en) when feeders are not fully synced yet.
+KNOWN_KNOCKOUT_PAIRINGS: dict[int, tuple[str, str]] = {
+    89: ("Paraguay", "France"),
+    90: ("Canada", "Morocco"),
+    95: ("Argentina", "Egypt"),
+    100: ("Argentina", "Switzerland"),
+}
+
+_KNOCKOUT_FEEDER_STAGES: tuple[str, ...] = (
+    "دور الـ16",
+    "ربع النهائي",
+    "نصف النهائي",
+    "النهائي",
+)
+
 
 def is_placeholder_team(name: str) -> bool:
     from teams_ar import normalize_team_name
@@ -534,6 +549,29 @@ def build_knockout_resolver(matches: list) -> _Resolver:
     )
 
 
+def _known_pairing_for_match(match: object) -> tuple[str, str] | None:
+    from teams_ar import normalize_team_name
+
+    fifa_number = _fifa_number_for_row(match)
+    if not fifa_number:
+        return None
+    pairing = KNOWN_KNOCKOUT_PAIRINGS.get(fifa_number)
+    if not pairing:
+        return None
+    return normalize_team_name(pairing[0]), normalize_team_name(pairing[1])
+
+
+def _needs_known_pairing_slot(name: str) -> bool:
+    from teams_ar import normalize_team_name
+
+    text = normalize_team_name(name.strip())
+    return bool(
+        is_placeholder_team(text)
+        or "Match Winner" in name
+        or WINNER_OF.match(text)
+    )
+
+
 def _resolved_pair(
     match: object,
     resolver: _Resolver,
@@ -568,6 +606,14 @@ def _resolved_pair(
         home = home_name
     if is_placeholder_team(away):
         away = away_name
+
+    known = _known_pairing_for_match(match)
+    if known:
+        known_home, known_away = known
+        if _needs_known_pairing_slot(match.home_team):
+            home = known_home
+        if _needs_known_pairing_slot(match.away_team):
+            away = known_away
     return home, away
 
 
@@ -655,8 +701,8 @@ def refresh_knockout_fixture_names() -> int:
     return changed
 
 
-def apply_r16_team_names_from_feeders() -> int:
-    """Force-write R16 names from feeder match winners (scores required)."""
+def apply_knockout_team_names_from_feeders() -> int:
+    """Force-write knockout names from feeder match winners (scores required)."""
     from database import get_db, list_matches
 
     matches = list_matches(open_only=False)
@@ -666,7 +712,7 @@ def apply_r16_team_names_from_feeders() -> int:
 
     with get_db() as conn:
         for fifa_number, fixture in enumerate(WORLD_CUP_2026_FIXTURES, start=1):
-            if fixture.group != "دور الـ16":
+            if fixture.group not in _KNOCKOUT_FEEDER_STAGES:
                 continue
             row = fifa_map.get(fifa_number)
             if not row:
@@ -691,20 +737,15 @@ def apply_r16_team_names_from_feeders() -> int:
     return changed
 
 
-def apply_known_r16_pairings() -> int:
-    """Write confirmed R16 pairings when placeholders are still showing."""
+def apply_known_knockout_pairings() -> int:
+    """Write confirmed knockout pairings when placeholders are still showing."""
     from database import get_db, list_matches
     from teams_ar import normalize_team_name
 
-    known: dict[int, tuple[str, str]] = {
-        90: ("Canada", "Morocco"),
-        89: ("Paraguay", "France"),
-        95: ("Argentina", "Egypt"),
-    }
     fifa_map = build_fifa_match_map(list_matches(open_only=False))
     changed = 0
     with get_db() as conn:
-        for fifa_number, (home_en, away_en) in known.items():
+        for fifa_number, (home_en, away_en) in KNOWN_KNOCKOUT_PAIRINGS.items():
             row = fifa_map.get(fifa_number)
             if not row:
                 continue
@@ -746,6 +787,11 @@ def sync_knockout_team_names() -> int:
                     (home, away, match_id),
                 )
                 changed += 1
-    changed += apply_r16_team_names_from_feeders()
-    changed += apply_known_r16_pairings()
+    changed += apply_knockout_team_names_from_feeders()
+    changed += apply_known_knockout_pairings()
     return changed
+
+
+# Backward-compatible aliases
+apply_r16_team_names_from_feeders = apply_knockout_team_names_from_feeders
+apply_known_r16_pairings = apply_known_knockout_pairings
