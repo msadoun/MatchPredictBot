@@ -36,7 +36,7 @@ MATCHDAY_KICKOFFS_UTC = ("17:00:00", "19:30:00", "22:00:00")
 
 CLUB_LOCAL_MATCHES: dict[str, tuple[tuple[str, bool], ...]] = {
     'ريال مدريد': (
-        ('أتلتيكو مدريد', True),
+        ('إسبانيول', True),
         ('إشبيلية', False),
         ('فالنسيا', True),
         ('ريال سوسيداد', False),

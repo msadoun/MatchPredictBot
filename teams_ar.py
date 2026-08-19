@@ -76,6 +76,7 @@ TEAM_EN_TO_AR: dict[str, str] = {
     "Aston Villa": "أستون فيلا",
     "Atalanta": "أتلنتا",
     "Athletic Bilbao": "أتلتيك بيلباو",
+    "Espanyol": "إسبانيول",
     "Atletico Madrid": "أتلتيكو مدريد",
     "Bayer Leverkusen": "بايل ليفركوزن",
     "Bayern Munich": "بايرن ميونخ",
