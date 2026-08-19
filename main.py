@@ -34,6 +34,7 @@ from handlers import (
     menu_callback,
     list_all_matches_command,
     load_worldcup_command,
+    load_season_command,
     matches_command,
     my_predictions_command,
     predict_callback,
@@ -136,6 +137,7 @@ async def post_init(application: Application) -> None:
         BotCommand("openmatch", "فتح مباراة"),
         BotCommand("closematch", "إغلاق مباراة"),
         BotCommand("loadworldcup", "تحميل كأس العالم"),
+        BotCommand("loadseason", "دوري جديد (7 أندية)"),
         BotCommand("importexcel", "استيراد Excel"),
         BotCommand("backuppredictions", "نسخ احتياطي"),
         BotCommand("restorepredictions", "استرجاع توقعات"),
@@ -336,6 +338,7 @@ def main() -> None:
     app.add_handler(CommandHandler("lb", leaderboard_command))
     app.add_handler(CommandHandler("addmatch", add_match_command))
     app.add_handler(CommandHandler("loadworldcup", load_worldcup_command))
+    app.add_handler(CommandHandler("loadseason", load_season_command))
     app.add_handler(CommandHandler("setresult", set_result_command))
     app.add_handler(CommandHandler("setprediction", set_prediction_command))
     app.add_handler(CommandHandler("allmatches", list_all_matches_command))

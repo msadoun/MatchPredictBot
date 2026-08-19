@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 from config import DATABASE_PATH
 from scoring import calculate_points
@@ -938,12 +938,17 @@ def list_active_day_predictable_matches(
 
 
 def backfill_match_kickoff_times() -> int:
+    from league_season import LEAGUE_SEASON_FIXTURES, league_kickoff_label
     from worldcup2026 import WORLD_CUP_2026_FIXTURES, kickoff_label
 
     by_date: dict[tuple[str, str, str], str] = {}
     by_pair: dict[tuple[str, str], str] = {}
     for fixture in WORLD_CUP_2026_FIXTURES:
         label = kickoff_label(fixture)
+        by_date[(fixture.home, fixture.away, fixture.date)] = label
+        by_pair[(fixture.home, fixture.away)] = label
+    for fixture in LEAGUE_SEASON_FIXTURES:
+        label = league_kickoff_label(fixture)
         by_date[(fixture.home, fixture.away, fixture.date)] = label
         by_pair[(fixture.home, fixture.away)] = label
 
@@ -968,17 +973,20 @@ def backfill_match_kickoff_times() -> int:
     return updated
 
 
-def seed_world_cup_matches() -> dict[str, int]:
-    from worldcup2026 import WORLD_CUP_2026_FIXTURES, kickoff_datetime, kickoff_label
-
+def _seed_fixtures(
+    fixtures: list[object],
+    *,
+    label_for: Callable[[object], str],
+    kickoff_for: Callable[[str], datetime],
+) -> dict[str, int]:
     now = datetime.utcnow()
     added = 0
     skipped = 0
     closed = 0
 
     with get_db() as conn:
-        for fixture in WORLD_CUP_2026_FIXTURES:
-            kickoff_at = kickoff_label(fixture)
+        for fixture in fixtures:
+            kickoff_at = label_for(fixture)
             existing = conn.execute(
                 """
                 SELECT id FROM matches
@@ -990,7 +998,7 @@ def seed_world_cup_matches() -> dict[str, int]:
                 skipped += 1
                 continue
 
-            is_open = kickoff_datetime(kickoff_at) > now
+            is_open = kickoff_for(kickoff_at) > now
             if not is_open:
                 closed += 1
 
@@ -1012,10 +1020,35 @@ def seed_world_cup_matches() -> dict[str, int]:
     return {"added": added, "skipped": skipped, "closed": closed}
 
 
-def ensure_world_cup_seeded() -> dict[str, int]:
+def seed_world_cup_matches() -> dict[str, int]:
+    from worldcup2026 import WORLD_CUP_2026_FIXTURES, kickoff_datetime, kickoff_label
+
+    return _seed_fixtures(
+        WORLD_CUP_2026_FIXTURES,
+        label_for=kickoff_label,
+        kickoff_for=kickoff_datetime,
+    )
+
+
+def seed_league_season_matches() -> dict[str, int]:
+    from league_season import LEAGUE_SEASON_FIXTURES, league_kickoff_datetime, league_kickoff_label
+
+    return _seed_fixtures(
+        LEAGUE_SEASON_FIXTURES,
+        label_for=league_kickoff_label,
+        kickoff_for=league_kickoff_datetime,
+    )
+
+
+def ensure_season_seeded() -> dict[str, int]:
     if count_matches() == 0:
-        return seed_world_cup_matches()
+        return seed_league_season_matches()
     return {"added": 0, "skipped": count_matches(), "closed": 0}
+
+
+def ensure_world_cup_seeded() -> dict[str, int]:
+    """Backward-compatible alias — new installs seed the league season."""
+    return ensure_season_seeded()
 
 
 def _row_get(row: sqlite3.Row, key: str, default: object = None) -> object:
@@ -1797,6 +1830,47 @@ def reset_all_bot_data() -> dict[str, int]:
     return _wipe_bot_tables(include_matches=True)
 
 
+def reset_to_league_season() -> dict[str, int | str]:
+    """Clear scores/predictions/matches and seed the seven-club league. Keeps users."""
+    try:
+        from prediction_backup import backup_predictions
+        from prediction_persistence import backup_database_file
+
+        backup_predictions(force=True)
+        backup_database_file()
+    except Exception as exc:
+        logger.warning("Pre-season reset backup skipped: %s", exc)
+
+    removed: dict[str, int] = {}
+    with get_db() as conn:
+        for table in ("prediction_drafts", "predictions", "matches"):
+            removed[table] = int(
+                conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            )
+        conn.execute("DELETE FROM prediction_drafts")
+        conn.execute("DELETE FROM predictions")
+        conn.execute("DELETE FROM matches")
+        conn.execute("DELETE FROM group_manual_points")
+
+    points = reset_all_user_points()
+    seed = seed_league_season_matches()
+    backfill_match_kickoff_times()
+    sync_match_open_flags()
+    logger.warning(
+        "League season reset: %d predictions cleared, %d matches seeded",
+        removed.get("predictions", 0),
+        seed["added"],
+    )
+    return {
+        "predictions_cleared": removed.get("predictions", 0),
+        "matches_cleared": removed.get("matches", 0),
+        "users_zeroed": points.get("users_zeroed", 0),
+        "seeded": seed["added"],
+        "skipped": seed["skipped"],
+        "closed": seed["closed"],
+    }
+
+
 def factory_reset_to_fresh_launch() -> dict[str, int | str]:
     """Reset to first-launch state: empty users, fresh matches, no recovery/import."""
     removed = _wipe_bot_tables(include_matches=True)
@@ -1807,7 +1881,7 @@ def factory_reset_to_fresh_launch() -> dict[str, int | str]:
     except Exception as exc:
         logger.warning("Could not mark factory reset: %s", exc)
 
-    seed = seed_world_cup_matches()
+    seed = seed_league_season_matches()
     backfill_match_kickoff_times()
     sync_match_open_flags()
     return {

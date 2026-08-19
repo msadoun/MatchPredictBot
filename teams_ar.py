@@ -59,6 +59,16 @@ TEAM_EN_TO_AR: dict[str, str] = {
     "DR Congo": "الكونغو الديمقراطية",
     "Uzbekistan": "أوزبكستان",
     "Colombia": "كولومبيا",
+    # League season clubs
+    "Real Madrid": "ريال مدريد",
+    "Barcelona": "برشلونة",
+    "Man United": "مانشستر يونايتد",
+    "Manchester United": "مانشستر يونايتد",
+    "Man City": "مانشستر سيتي",
+    "Manchester City": "مانشستر سيتي",
+    "Liverpool": "ليفربول",
+    "Arsenal": "أرسنال",
+    "Chelsea": "تشيلسي",
     # Knockout placeholders
     "Group A 2nd": "ثاني المجموعة أ",
     "Group B 2nd": "ثاني المجموعة ب",
