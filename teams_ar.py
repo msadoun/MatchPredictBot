@@ -109,8 +109,6 @@ TEAM_EN_TO_AR: dict[str, str] = {
     "Shakhtar Donetsk": "شاختار دونيتسك",
     "Slavia Prague": "سلافيا براغ",
     "Sunderland": "سندرلاند",
-    "Everton": "إيفرتون",
-    "Feyenoord": "فينوورد",
     "Fulham": "فولهام",
     "Girona": "جيرونا",
     "Inter Milan": "إنتر ميلان",
