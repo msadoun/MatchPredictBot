@@ -152,18 +152,36 @@ def _local_label(club: str) -> str:
     return LOCAL_LA_LIGA_LABEL if club in LA_LIGA_TEAMS else LOCAL_PL_LABEL
 
 
-def _fixture_triples() -> list[tuple[str, str, str, str]]:
+def _club_rows(
+    club: str,
+    matches: tuple[tuple[str, bool], ...],
+    competition: str,
+) -> list[tuple[str, str, str, str]]:
     rows: list[tuple[str, str, str, str]] = []
-    for club, matches in CLUB_LOCAL_MATCHES.items():
-        for opponent, club_home in matches:
-            home = club if club_home else opponent
-            away = opponent if club_home else club
-            rows.append((home, away, _local_label(club), club))
-    for club, matches in CLUB_CHAMPIONS_LEAGUE_MATCHES.items():
-        for opponent, club_home in matches:
-            home = club if club_home else opponent
-            away = opponent if club_home else club
-            rows.append((home, away, CHAMPIONS_LEAGUE_LABEL, club))
+    for opponent, club_home in matches:
+        home = club if club_home else opponent
+        away = opponent if club_home else club
+        rows.append((home, away, competition, club))
+    return rows
+
+
+def _fixture_triples() -> list[tuple[str, str, str, str]]:
+    """Interleave by round so each club appears across matchdays (not RM block first)."""
+    local_by_club = {
+        club: _club_rows(club, CLUB_LOCAL_MATCHES[club], _local_label(club))
+        for club in LEAGUE_TEAMS
+    }
+    cl_by_club = {
+        club: _club_rows(club, CLUB_CHAMPIONS_LEAGUE_MATCHES[club], CHAMPIONS_LEAGUE_LABEL)
+        for club in LEAGUE_TEAMS
+    }
+    rows: list[tuple[str, str, str, str]] = []
+    for round_idx in range(LOCAL_MATCHES_PER_CLUB):
+        for club in LEAGUE_TEAMS:
+            rows.append(local_by_club[club][round_idx])
+    for round_idx in range(CL_MATCHES_PER_CLUB):
+        for club in LEAGUE_TEAMS:
+            rows.append(cl_by_club[club][round_idx])
     return rows
 
 

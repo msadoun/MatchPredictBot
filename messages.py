@@ -58,6 +58,7 @@ CHOOSE_MATCH_UPCOMING = "لا توجد مباريات اليوم. اختر مب�
 NO_OPEN_MATCHES = "لا توجد مباريات مفتوحة للتوقع حالياً."
 
 CHOOSE_MATCH = "اختر مباراة للتوقع ({date}):"
+CHOOSE_MATCH_LEAGUE = "اختر مباراة — مباراة قادمة لكل نادٍ من الأندية السبعة:"
 WHO_WINS = "من سيفوز؟"
 MATCH_HEADER = "المباراة #{id}\n{home} {vs} {away}"
 

@@ -61,3 +61,10 @@ def test_kickoff_label_includes_competition():
         LOCAL_PL_LABEL,
         CHAMPIONS_LEAGUE_LABEL,
     }
+
+
+def test_fixtures_interleaved_by_club():
+    first_seven = LEAGUE_SEASON_FIXTURES[:7]
+    clubs = {f.club for f in first_seven}
+    assert len(clubs) == 7
+    assert clubs == set(LEAGUE_TEAMS)

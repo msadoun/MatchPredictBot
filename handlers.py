@@ -617,6 +617,10 @@ async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         matches = db.list_predictable_matches(on_date=on_date, limit=25)
         total = db.count_matches(open_only=True, on_date=on_date)
         header = msg.OPEN_MATCHES_HEADER.format(date=on_date)
+    elif db.is_league_season_loaded():
+        matches = db.list_next_open_match_per_league_club()
+        total = len(matches)
+        header = msg.CHOOSE_MATCH_LEAGUE
     else:
         active_day, matches = db.list_active_day_predictable_matches(limit=25)
         if not active_day:
@@ -1060,6 +1064,12 @@ def _match_picker_keyboard(
 
 
 def _predictable_matches(limit: int = 25) -> tuple[list[db.Match], str]:
+    if db.is_league_season_loaded():
+        matches = db.list_next_open_match_per_league_club()
+        if matches:
+            return matches, msg.CHOOSE_MATCH_LEAGUE
+        return [], msg.NO_OPEN_MATCHES
+
     match_day, matches = db.list_active_day_predictable_matches(limit=limit)
     if not match_day:
         return [], msg.NO_OPEN_MATCHES
