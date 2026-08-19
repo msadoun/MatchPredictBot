@@ -3090,3 +3090,33 @@ async def load_worldcup_command(update: Update, context: ContextTypes.DEFAULT_TY
         ),
         bot_username=BOT_USERNAME,
     )
+
+
+async def load_season_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        await reply_to_user(
+            update, context, msg.ADMIN_ONLY, bot_username=BOT_USERNAME
+        )
+        return
+
+    if not context.args or context.args[0].lower() != "confirm":
+        await reply_to_user(
+            update, context, msg.LEAGUE_SEASON_CONFIRM, bot_username=BOT_USERNAME
+        )
+        return
+
+    result = db.reset_to_league_season()
+    open_count = db.count_matches(open_only=True)
+    await reply_to_user(
+        update,
+        context,
+        msg.LEAGUE_SEASON_DONE.format(
+            predictions_cleared=int(result.get("predictions_cleared", 0) or 0),
+            matches_cleared=int(result.get("matches_cleared", 0) or 0),
+            users_zeroed=int(result.get("users_zeroed", 0) or 0),
+            seeded=int(result.get("seeded", 0) or 0),
+            open=open_count,
+        ),
+        bot_username=BOT_USERNAME,
+    )
