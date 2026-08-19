@@ -963,8 +963,13 @@ def is_league_season_loaded() -> bool:
 
 
 def list_next_open_match_per_league_club() -> list[Match]:
-    """Next predictable match for each of the seven tracked clubs."""
-    from league_season import LEAGUE_TEAMS
+    """Next predictable local-league match for each of the seven tracked clubs."""
+    from league_season import (
+        CHAMPIONS_LEAGUE_LABEL,
+        LEAGUE_TEAMS,
+        LOCAL_LA_LIGA_LABEL,
+        LOCAL_PL_LABEL,
+    )
 
     sync_match_open_flags()
     open_matches = list_matches(open_only=True, limit=None)
@@ -973,9 +978,20 @@ def list_next_open_match_per_league_club() -> list[Match]:
         club_matches = [
             m for m in open_matches if club in (m.home_team, m.away_team)
         ]
-        club_matches.sort(key=lambda m: (m.kickoff_at or "", m.id))
-        if club_matches:
-            by_club[club] = club_matches[0]
+        local_matches = [
+            m
+            for m in club_matches
+            if LOCAL_LA_LIGA_LABEL in (m.kickoff_at or "")
+            or LOCAL_PL_LABEL in (m.kickoff_at or "")
+        ]
+        pool = local_matches or [
+            m
+            for m in club_matches
+            if CHAMPIONS_LEAGUE_LABEL in (m.kickoff_at or "")
+        ]
+        pool.sort(key=lambda m: (m.kickoff_at or "", m.id))
+        if pool:
+            by_club[club] = pool[0]
     return [by_club[club] for club in LEAGUE_TEAMS if club in by_club]
 
 

@@ -90,3 +90,26 @@ def test_real_madrid_opens_at_espanyol():
 
 def test_season_starts_in_august_2026():
     assert LEAGUE_SEASON_FIXTURES[0].kickoff_utc.startswith("2026-08")
+
+
+def test_gw1_opening_fixtures():
+    """2026/27 gameweek 1 / jornada opening matches per official calendars."""
+    def next_local(club: str) -> tuple[str, str]:
+        local = sorted(
+            (
+                f
+                for f in fixtures_for_club(club)
+                if LOCAL_LA_LIGA_LABEL in f.group or LOCAL_PL_LABEL in f.group
+            ),
+            key=lambda f: f.kickoff_utc,
+        )
+        first = local[0]
+        return first.home, first.away
+
+    assert next_local("مانشستر يونايتد") == ("هال", "مانشستر يونايتد")
+    assert next_local("مانشستر سيتي") == ("مانشستر سيتي", "بورنموث")
+    assert next_local("أرسنال") == ("أرسنال", "كونتري")
+    assert next_local("ليفربول") == ("نيوكاسل", "ليفربول")
+    assert next_local("تشيلسي") == ("فولهام", "تشيلسي")
+    assert next_local("برشلونة") == ("إلتشي", "برشلونة")
+    assert next_local("ريال مدريد") == ("إسبانيول", "ريال مدريد")
