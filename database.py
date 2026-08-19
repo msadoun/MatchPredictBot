@@ -937,6 +937,48 @@ def list_active_day_predictable_matches(
     return day, list_predictable_matches(on_date=day, limit=limit, match_day_only=True)
 
 
+def is_league_season_loaded() -> bool:
+    from league_season import (
+        CHAMPIONS_LEAGUE_LABEL,
+        LOCAL_LA_LIGA_LABEL,
+        LOCAL_PL_LABEL,
+    )
+
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT 1 FROM matches
+            WHERE kickoff_at LIKE ?
+               OR kickoff_at LIKE ?
+               OR kickoff_at LIKE ?
+            LIMIT 1
+            """,
+            (
+                f"%{LOCAL_LA_LIGA_LABEL}%",
+                f"%{LOCAL_PL_LABEL}%",
+                f"%{CHAMPIONS_LEAGUE_LABEL}%",
+            ),
+        ).fetchone()
+    return row is not None
+
+
+def list_next_open_match_per_league_club() -> list[Match]:
+    """Next predictable match for each of the seven tracked clubs."""
+    from league_season import LEAGUE_TEAMS
+
+    sync_match_open_flags()
+    open_matches = list_matches(open_only=True, limit=None)
+    by_club: dict[str, Match] = {}
+    for club in LEAGUE_TEAMS:
+        club_matches = [
+            m for m in open_matches if club in (m.home_team, m.away_team)
+        ]
+        club_matches.sort(key=lambda m: (m.kickoff_at or "", m.id))
+        if club_matches:
+            by_club[club] = club_matches[0]
+    return [by_club[club] for club in LEAGUE_TEAMS if club in by_club]
+
+
 def backfill_match_kickoff_times() -> int:
     from league_season import LEAGUE_SEASON_FIXTURES, league_kickoff_label
     from worldcup2026 import WORLD_CUP_2026_FIXTURES, kickoff_label
