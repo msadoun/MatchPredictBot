@@ -1,15 +1,19 @@
-"""Seven-club league season fixtures (single round-robin)."""
+"""Seven-club season: domestic league + Champions League fixtures."""
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from itertools import combinations
 
 from worldcup2026 import kickoff_datetime
 
-LEAGUE_SEASON_LABEL = "دوري الأبطال 2026"
+LEAGUE_SEASON_LABEL = "موسم 2026"
 
-LEAGUE_TEAMS: tuple[str, ...] = (
+LA_LIGA_TEAMS: tuple[str, ...] = (
     "ريال مدريد",
     "برشلونة",
+)
+
+PREMIER_LEAGUE_TEAMS: tuple[str, ...] = (
     "مانشستر يونايتد",
     "مانشستر سيتي",
     "ليفربول",
@@ -17,10 +21,15 @@ LEAGUE_TEAMS: tuple[str, ...] = (
     "تشيلسي",
 )
 
-# First match-day (UTC calendar date for round 1).
+LEAGUE_TEAMS: tuple[str, ...] = LA_LIGA_TEAMS + PREMIER_LEAGUE_TEAMS
+
+LOCAL_LA_LIGA_LABEL = "الدوري الإسباني"
+LOCAL_PL_LABEL = "الدوري الإنجليزي"
+CHAMPIONS_LEAGUE_LABEL = "دوري أبطال أوروبا"
+
 SEASON_START_DATE = date(2026, 8, 23)
-DAYS_BETWEEN_ROUNDS = 3
-ROUND_KICKOFFS_UTC = ("17:00:00", "19:30:00", "22:00:00")
+DAYS_BETWEEN_MATCHDAYS = 3
+MATCHDAY_KICKOFFS_UTC = ("17:00:00", "19:30:00", "22:00:00")
 
 
 @dataclass(frozen=True)
@@ -32,47 +41,77 @@ class LeagueFixture:
     kickoff_utc: str = ""
 
 
-def _round_robin_pairings(teams: tuple[str, ...]) -> list[list[tuple[str, str]]]:
-    """Circle method; odd team count uses a bye each round."""
-    roster = list(teams)
-    if len(roster) % 2:
-        roster.append("")
-    n = len(roster)
-    rounds = n - 1
-    rotation = roster[:]
-    all_rounds: list[list[tuple[str, str]]] = []
-    for _ in range(rounds):
-        pairs: list[tuple[str, str]] = []
-        for i in range(n // 2):
-            home, away = rotation[i], rotation[n - 1 - i]
-            if home and away:
-                pairs.append((home, away))
-        all_rounds.append(pairs)
-        rotation = [rotation[0]] + [rotation[-1]] + rotation[1:-1]
-    return all_rounds
+def _ordered_pairs(teams: tuple[str, ...]) -> list[tuple[str, str]]:
+    return list(combinations(teams, 2))
 
 
-def _build_fixtures() -> list[LeagueFixture]:
+def _cross_league_pairs(
+    domestic_a: tuple[str, ...],
+    domestic_b: tuple[str, ...],
+) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for home in domestic_a:
+        for away in domestic_b:
+            pairs.append((home, away))
+    return pairs
+
+
+def _assign_schedule(
+    labeled_pairs: list[tuple[str, str, str]],
+    *,
+    start: date,
+) -> list[LeagueFixture]:
+    """Spread fixtures across matchdays; `group` is the competition label."""
     fixtures: list[LeagueFixture] = []
-    for round_idx, pairs in enumerate(_round_robin_pairings(LEAGUE_TEAMS), start=1):
-        round_day = SEASON_START_DATE + timedelta(days=(round_idx - 1) * DAYS_BETWEEN_ROUNDS)
-        round_label = f"الجولة {round_idx}"
-        for match_idx, (home, away) in enumerate(pairs):
-            kickoff_time = ROUND_KICKOFFS_UTC[match_idx % len(ROUND_KICKOFFS_UTC)]
-            kickoff_utc = f"{round_day.isoformat()}T{kickoff_time}"
-            fixtures.append(
-                LeagueFixture(
-                    home=home,
-                    away=away,
-                    date=round_day.isoformat(),
-                    group=round_label,
-                    kickoff_utc=kickoff_utc,
-                )
+    matchday = 0
+    slot = 0
+    current_day = start
+    for home, away, competition in labeled_pairs:
+        if slot == 0 and fixtures:
+            matchday += 1
+            current_day = start + timedelta(days=matchday * DAYS_BETWEEN_MATCHDAYS)
+        kickoff_time = MATCHDAY_KICKOFFS_UTC[slot % len(MATCHDAY_KICKOFFS_UTC)]
+        kickoff_utc = f"{current_day.isoformat()}T{kickoff_time}"
+        fixtures.append(
+            LeagueFixture(
+                home=home,
+                away=away,
+                date=current_day.isoformat(),
+                group=competition,
+                kickoff_utc=kickoff_utc,
             )
+        )
+        slot += 1
+        if slot % len(MATCHDAY_KICKOFFS_UTC) == 0:
+            matchday += 1
+            current_day = start + timedelta(days=matchday * DAYS_BETWEEN_MATCHDAYS)
+            slot = 0
     return fixtures
 
 
+def _build_fixtures() -> list[LeagueFixture]:
+    labeled: list[tuple[str, str, str]] = []
+
+    for home, away in _ordered_pairs(LA_LIGA_TEAMS):
+        labeled.append((home, away, LOCAL_LA_LIGA_LABEL))
+
+    for home, away in _ordered_pairs(PREMIER_LEAGUE_TEAMS):
+        labeled.append((home, away, LOCAL_PL_LABEL))
+
+    for home, away in _cross_league_pairs(LA_LIGA_TEAMS, PREMIER_LEAGUE_TEAMS):
+        labeled.append((home, away, CHAMPIONS_LEAGUE_LABEL))
+
+    return _assign_schedule(labeled, start=SEASON_START_DATE)
+
+
 LEAGUE_SEASON_FIXTURES: list[LeagueFixture] = _build_fixtures()
+
+LOCAL_LEAGUE_FIXTURES = [
+    f for f in LEAGUE_SEASON_FIXTURES if f.group in (LOCAL_LA_LIGA_LABEL, LOCAL_PL_LABEL)
+]
+CHAMPIONS_LEAGUE_FIXTURES = [
+    f for f in LEAGUE_SEASON_FIXTURES if f.group == CHAMPIONS_LEAGUE_LABEL
+]
 
 
 def league_kickoff_label(fixture: LeagueFixture) -> str:
