@@ -14,6 +14,7 @@ TEAMS = {
     "CHE": "\u062a\u0634\u064a\u0644\u0633\u064a",
 }
 OPP = {
+    "ESP": "\u0625\u0633\u0628\u0627\u0646\u064a\u0648\u0644",
     "ATM": "\u0623\u062a\u0644\u062a\u064a\u0643\u0648 \u0645\u062f\u0631\u064a\u062f",
     "SEV": "\u0625\u0634\u0628\u064a\u0644\u064a\u0629",
     "VAL": "\u0641\u0627\u0644\u0646\u0633\u064a\u0627",
@@ -52,7 +53,7 @@ OPP = {
 }
 
 LOCAL = {
-    TEAMS["RM"]: [(OPP["ATM"], True), (OPP["SEV"], False), (OPP["VAL"], True), (OPP["RSO"], False), (OPP["VIL"], True)],
+    TEAMS["RM"]: [(OPP["ESP"], True), (OPP["SEV"], False), (OPP["VAL"], True), (OPP["RSO"], False), (OPP["VIL"], True)],
     TEAMS["BAR"]: [(OPP["ATH"], True), (OPP["BET"], False), (OPP["GIR"], True), (OPP["ATM"], False), (OPP["SEV"], True)],
     TEAMS["MU"]: [(OPP["TOT"], True), (OPP["NEW"], False), (OPP["AVL"], True), (OPP["WHU"], False), (OPP["EVE"], True)],
     TEAMS["MC"]: [(OPP["BHA"], True), (OPP["CRY"], False), (OPP["WOL"], True), (OPP["BOU"], False), (OPP["FUL"], True)],
