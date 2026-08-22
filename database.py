@@ -58,11 +58,48 @@ class LeaderboardEntry:
     winner_hits: int
 
 
+def _default_prediction_group_chat_id() -> int | None:
+    """Primary group for league predictions when the user has no stored group."""
+    from config import configured_group_chat_ids
+
+    chat_ids = configured_group_chat_ids()
+    if len(chat_ids) == 1:
+        return chat_ids[0]
+    return None
+
+
+def _group_leaderboard_scope_sql() -> str:
+    """Users visible on a group leaderboard (members, active group, manual base, predictors)."""
+    return """
+            SELECT gm.user_id
+            FROM group_members gm
+            WHERE gm.chat_id = ?
+            UNION
+            SELECT u2.id AS user_id
+            FROM users u2
+            WHERE u2.active_group_chat_id = ?
+            UNION
+            SELECT gmp.user_id
+            FROM group_manual_points gmp
+            WHERE gmp.chat_id = ? AND gmp.points > 0
+            UNION
+            SELECT DISTINCT p.user_id
+            FROM predictions p
+    """
+
+
 def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object]]:
     params: list[object] = []
     if group_chat_id is not None:
-        params.extend([group_chat_id, group_chat_id, GLOBAL_MANUAL_POINTS_CHAT_ID])
-        sql = """
+        params.extend(
+            [
+                group_chat_id,
+                group_chat_id,
+                GLOBAL_MANUAL_POINTS_CHAT_ID,
+                GLOBAL_MANUAL_POINTS_CHAT_ID,
+            ]
+        )
+        sql = f"""
         SELECT
             u.id,
             u.telegram_id,
@@ -75,13 +112,7 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
             COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
         FROM users u
         INNER JOIN (
-            SELECT gm.user_id
-            FROM group_members gm
-            WHERE gm.chat_id = ?
-            UNION
-            SELECT u2.id AS user_id
-            FROM users u2
-            WHERE u2.active_group_chat_id = ?
+            {_group_leaderboard_scope_sql()}
         ) scope ON scope.user_id = u.id
         LEFT JOIN group_manual_points gmp
             ON gmp.user_id = u.id AND gmp.chat_id = ?
@@ -1523,6 +1554,7 @@ def save_prediction(
         ).fetchone()
     clear_prediction_draft(user_id)
     prediction = _row_to_prediction(row)
+    link_prediction_to_active_group(user_id)
     try:
         with get_db() as conn:
             user_row = conn.execute(
@@ -1567,13 +1599,19 @@ def link_prediction_to_active_group(user_id: int, chat_id: int | None = None) ->
     groups = get_user_group_chat_ids(user_id)
     if len(groups) == 1:
         register_group_member(groups[0], user_id)
+        return
+
+    default_group = _default_prediction_group_chat_id()
+    if default_group:
+        set_user_active_group(user_id, default_group)
 
 
 def sync_predictors_to_group_members() -> int:
     """Backfill group membership for users who have predictions but were not registered."""
     from group_standings import LEGACY_KM3NA_GROUP_CHAT_ID
 
-    linked = 0
+    linked_users: set[int] = set()
+
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -1586,8 +1624,9 @@ def sync_predictors_to_group_members() -> int:
             (LEGACY_KM3NA_GROUP_CHAT_ID,),
         ).fetchall()
     for row in rows:
-        register_group_member(int(row["active_group_chat_id"]), int(row["id"]))
-        linked += 1
+        user_id = int(row["id"])
+        register_group_member(int(row["active_group_chat_id"]), user_id)
+        linked_users.add(user_id)
 
     with get_db() as conn:
         orphan_rows = conn.execute(
@@ -1604,8 +1643,24 @@ def sync_predictors_to_group_members() -> int:
         groups = get_user_group_chat_ids(user_id)
         if len(groups) == 1:
             register_group_member(groups[0], user_id)
-            linked += 1
-    return linked
+            linked_users.add(user_id)
+
+    default_group = _default_prediction_group_chat_id()
+    if default_group:
+        with get_db() as conn:
+            predictor_rows = conn.execute(
+                """
+                SELECT DISTINCT u.id
+                FROM users u
+                INNER JOIN predictions p ON p.user_id = u.id
+                """
+            ).fetchall()
+        for row in predictor_rows:
+            user_id = int(row["id"])
+            register_group_member(default_group, user_id)
+            linked_users.add(user_id)
+
+    return len(linked_users)
 
 
 def save_prediction_draft(
@@ -1917,19 +1972,13 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
             )
         return int(
             conn.execute(
-                """
+                f"""
                 SELECT COUNT(*)
                 FROM (
                     SELECT u.id
                     FROM users u
                     INNER JOIN (
-                        SELECT gm.user_id
-                        FROM group_members gm
-                        WHERE gm.chat_id = ?
-                        UNION
-                        SELECT u2.id AS user_id
-                        FROM users u2
-                        WHERE u2.active_group_chat_id = ?
+                        {_group_leaderboard_scope_sql()}
                     ) scope ON scope.user_id = u.id
                     LEFT JOIN group_manual_points gmp
                         ON gmp.user_id = u.id AND gmp.chat_id = ?
@@ -1938,7 +1987,12 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
                     HAVING COALESCE(MAX(gmp.points), 0) > 0 OR COUNT(p.id) > 0
                 )
                 """,
-                (group_chat_id, group_chat_id, GLOBAL_MANUAL_POINTS_CHAT_ID),
+                (
+                    group_chat_id,
+                    group_chat_id,
+                    GLOBAL_MANUAL_POINTS_CHAT_ID,
+                    GLOBAL_MANUAL_POINTS_CHAT_ID,
+                ),
             ).fetchone()[0]
         )
 

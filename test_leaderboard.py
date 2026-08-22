@@ -15,6 +15,39 @@ def _fresh_db():
     return db
 
 
+def test_group_leaderboard_includes_orphan_predictor_without_membership():
+    db = _fresh_db()
+    group_id = -1001234567890
+    os.environ["ALKORAM3NA_GROUP_CHAT_ID"] = str(group_id)
+    import config
+
+    importlib.reload(config)
+
+    user = db.upsert_user(333, "player3", "Player Three")
+    match = db.add_match("E", "F", "2030-08-24T12:00:00")
+    db.save_prediction(user.id, match.id, 2, 1)
+    db.set_match_result(match.id, 2, 1)
+
+    entries = db.get_leaderboard(group_chat_id=group_id)
+    assert len(entries) == 1
+    assert entries[0].display_name == "Player Three"
+    assert entries[0].total_points == 3
+
+
+def test_group_leaderboard_includes_manual_base_without_group_membership():
+    db = _fresh_db()
+    group_id = -1001234567890
+    user = db.upsert_user(444, "player4", "Player Four")
+
+    db.set_group_manual_points(group_id, user.id, 15)
+    with db.get_db() as conn:
+        conn.execute("DELETE FROM group_members WHERE user_id = ?", (user.id,))
+
+    entries = db.get_leaderboard(group_chat_id=group_id)
+    assert len(entries) == 1
+    assert entries[0].total_points == 15
+
+
 def test_group_leaderboard_includes_predictor_with_active_group_only():
     db = _fresh_db()
     group_id = -1001234567890

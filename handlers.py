@@ -7,7 +7,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRe
 from telegram.ext import ContextTypes
 
 import database as db
-from config import ADMIN_USER_IDS, ALKORAM3NA_GROUP_CHAT_ID
+from config import ADMIN_USER_IDS, ALKORAM3NA_GROUP_CHAT_ID, configured_group_chat_ids
 import messages as msg
 from group_standings import (
     ALKORAM3NA_GROUP_USERNAME,
@@ -305,6 +305,12 @@ def _resolve_leaderboard_group(
         return groups[0], False
     if len(groups) > 1:
         return None, True
+
+    configured = configured_group_chat_ids()
+    if len(configured) == 1:
+        context.user_data["leaderboard_group_chat_id"] = configured[0]
+        return configured[0], False
+
     return None, False
 
 
@@ -1161,6 +1167,12 @@ def _ensure_prediction_group_context(
     if active:
         context.user_data["leaderboard_group_chat_id"] = active
         db.link_prediction_to_active_group(participant.id, active)
+        return
+
+    configured = configured_group_chat_ids()
+    if len(configured) == 1:
+        db.set_user_active_group(participant.id, configured[0])
+        context.user_data["leaderboard_group_chat_id"] = configured[0]
 
 
 async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
