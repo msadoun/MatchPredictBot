@@ -220,9 +220,10 @@ USER_NOT_FOUND = "المستخدم غير موجود."
 
 SYNCSCORES_DONE = (
     "تم تحديث النقاط لجميع المستخدمين.\n"
-    "• نتائج جديدة من ESPN: {results_updated}\n"
+    "• نتائج جديدة من ESPN (الدوري الإسباني / الإنجليزي / أبطال أوروبا): {results_updated}\n"
     "• توقعات أُعيد حسابها: {predictions_scored}\n"
-    "• مباريات بدون تطابق ESPN: {espn_skipped}"
+    "• مباريات بدون تطابق ESPN: {espn_skipped}\n\n"
+    "النتائج تُستورد تلقائياً كل دقيقة بعد انتهاء المباراة — لا حاجة لـ /setresult."
 )
 
 BTN_ADMIN_PREDICTIONS = "⚙️ لوحة المسؤول"
@@ -241,7 +242,7 @@ ADMIN_COMMANDS_TEXT = (
     "• /addmatch <منزل> <ضيف> [موعد] — إضافة مباراة\n"
     "• /loadworldcup — تحميل مباريات كأس العالم\n"
     "• /loadseason confirm — دوري جديد (7 أندية، تصفير النقاط)\n"
-    "• /syncscores — مزامنة النتائج من ESPN\n\n"
+    "• /syncscores — مزامنة نتائج ESPN (تلقائية كل دقيقة)\n\n"
     "📋 التوقعات والتقارير\n"
     "• /adminpredictions — هذه اللوحة\n"
     "• /adminhelp — عرض هذه القائمة\n"

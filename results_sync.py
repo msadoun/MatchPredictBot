@@ -10,14 +10,16 @@ from teams_ar import TEAM_EN_TO_AR
 logger = logging.getLogger(__name__)
 
 ESPN_SCOREBOARD_URL = (
-    "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates={date}"
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={date}"
 )
+WORLD_CUP_LEAGUE = "fifa.world"
 
 _scoreboard_cache: dict[str, list[dict]] = {}
 
 
 def clear_scoreboard_cache() -> None:
     _scoreboard_cache.clear()
+
 
 TEAM_ALIASES: dict[str, str] = {
     "United States": "USA",
@@ -32,6 +34,15 @@ TEAM_ALIASES: dict[str, str] = {
     "Congo DR": "DR Congo",
     "Bosnia-Herzegovina": "Bosnia and Herzegovina",
     "Bosnia Herzegovina": "Bosnia and Herzegovina",
+    # ESPN display names → canonical keys in teams_ar
+    "Athletic Club": "Athletic Bilbao",
+    "Tottenham Hotspur": "Tottenham",
+    "Newcastle United": "Newcastle",
+    "Brighton & Hove Albion": "Brighton",
+    "Brighton and Hove Albion": "Brighton",
+    "Wolverhampton Wanderers": "Wolves",
+    "West Ham United": "West Ham",
+    "Leeds United": "Leeds United",
 }
 
 
@@ -63,17 +74,55 @@ def _event_is_finished(event: dict) -> bool:
     return detail in {"ft", "full time", "full-time", "final"}
 
 
-def _fetch_scoreboard(date_yyyymmdd: str) -> list[dict]:
-    if date_yyyymmdd in _scoreboard_cache:
-        return _scoreboard_cache[date_yyyymmdd]
+def _scoreboard_leagues_for_match(kickoff_at: str | None) -> list[str]:
+    """Pick ESPN competition slug(s) for a fixture kickoff label."""
+    if not kickoff_at:
+        return [WORLD_CUP_LEAGUE]
 
-    url = ESPN_SCOREBOARD_URL.format(date=date_yyyymmdd)
+    from league_season import (
+        CHAMPIONS_LEAGUE_LABEL,
+        LOCAL_LA_LIGA_LABEL,
+        LOCAL_PL_LABEL,
+    )
+
+    leagues: list[str] = []
+    if LOCAL_LA_LIGA_LABEL in kickoff_at:
+        leagues.append("esp.1")
+    if LOCAL_PL_LABEL in kickoff_at:
+        leagues.append("eng.1")
+    if CHAMPIONS_LEAGUE_LABEL in kickoff_at:
+        leagues.append("uefa.champions")
+    if leagues:
+        return leagues
+    return [WORLD_CUP_LEAGUE]
+
+
+def active_scoreboard_leagues() -> list[str]:
+    """Leagues polled on each background sync."""
+    from database import is_league_season_loaded
+
+    if is_league_season_loaded():
+        return ["esp.1", "eng.1", "uefa.champions"]
+    return [WORLD_CUP_LEAGUE]
+
+
+def _fetch_scoreboard(date_yyyymmdd: str, league: str) -> list[dict]:
+    cache_key = f"{league}:{date_yyyymmdd}"
+    if cache_key in _scoreboard_cache:
+        return _scoreboard_cache[cache_key]
+
+    url = ESPN_SCOREBOARD_URL.format(league=league, date=date_yyyymmdd)
     try:
         with urllib.request.urlopen(url, timeout=20) as response:
             payload = json.load(response)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        logger.warning("ESPN scoreboard fetch failed for %s: %s", date_yyyymmdd, exc)
-        _scoreboard_cache[date_yyyymmdd] = []
+        logger.warning(
+            "ESPN scoreboard fetch failed for %s %s: %s",
+            league,
+            date_yyyymmdd,
+            exc,
+        )
+        _scoreboard_cache[cache_key] = []
         return []
 
     finished: list[dict] = []
@@ -105,9 +154,10 @@ def _fetch_scoreboard(date_yyyymmdd: str) -> list[dict]:
                 "away_ar": _english_to_arabic(away_name),
                 "home_score": home_score,
                 "away_score": away_score,
+                "league": league,
             }
         )
-    _scoreboard_cache[date_yyyymmdd] = finished
+    _scoreboard_cache[cache_key] = finished
     return finished
 
 
@@ -205,6 +255,13 @@ def _orient_espn_result_for_match(match, result: dict) -> tuple[str, str, int, i
     return home_ar, away_ar, result["home_score"], result["away_score"]
 
 
+def _iter_scoreboard_results(date_key: str, leagues: list[str]) -> list[dict]:
+    results: list[dict] = []
+    for league in leagues:
+        results.extend(_fetch_scoreboard(date_key, league))
+    return results
+
+
 def restore_match_result_from_espn(match_id: int) -> bool:
     """Import a finished score for one match (used after admin reopen)."""
     from knockout_teams import is_placeholder_team, teams_match_knockout_fixture
@@ -215,9 +272,10 @@ def restore_match_result_from_espn(match_id: int) -> bool:
     if match.home_score is not None and match.away_score is not None:
         return False
 
+    leagues = _scoreboard_leagues_for_match(match.kickoff_at)
     date_part = match.kickoff_at.split(" · ", 1)[0].strip()[:10]
     for date_key in _date_keys_around(date_part):
-        for result in _fetch_scoreboard(date_key):
+        for result in _iter_scoreboard_results(date_key, leagues):
             found_id = _find_match_id(result["home_ar"], result["away_ar"], result["date"])
             if found_id != match_id:
                 if found_id is not None:
@@ -245,8 +303,9 @@ def restore_match_result_from_espn(match_id: int) -> bool:
             )
             if updated:
                 logger.info(
-                    "Restored ESPN result for match #%d: %s vs %s %d-%d",
+                    "Restored ESPN result for match #%d (%s): %s vs %s %d-%d",
                     match_id,
+                    result.get("league", "?"),
                     home_team,
                     away_team,
                     home_score,
@@ -306,17 +365,19 @@ def sync_match_results_from_espn(days_back: int = 60, days_ahead: int = 1) -> di
     scanned = 0
     skipped = 0
     rescored = 0
+    leagues = active_scoreboard_leagues()
 
     for offset in range(-days_back, days_ahead + 1):
         day = today + timedelta(days=offset)
         date_key = day.strftime("%Y%m%d")
-        for result in _fetch_scoreboard(date_key):
+        for result in _iter_scoreboard_results(date_key, leagues):
             scanned += 1
             match_id = _find_match_id(result["home_ar"], result["away_ar"], result["date"])
             if not match_id:
                 skipped += 1
-                logger.warning(
-                    "ESPN result not matched: %s vs %s on %s (%d-%d)",
+                logger.debug(
+                    "ESPN result not matched (%s): %s vs %s on %s (%d-%d)",
+                    result.get("league", "?"),
                     result["home_ar"],
                     result["away_ar"],
                     result["date"],
@@ -357,6 +418,18 @@ def sync_match_results_from_espn(days_back: int = 60, days_ahead: int = 1) -> di
             )
             if match:
                 updated += 1
+                logger.info(
+                    "ESPN imported match #%d (%s): %s vs %s %d-%d",
+                    match_id,
+                    result.get("league", "?"),
+                    home_team,
+                    away_team,
+                    home_score,
+                    away_score,
+                )
+
+    if skipped:
+        logger.info("ESPN sync skipped %d unmatched finished result(s)", skipped)
 
     return {
         "updated": updated,
