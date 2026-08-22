@@ -61,7 +61,7 @@ class LeaderboardEntry:
 def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object]]:
     params: list[object] = []
     if group_chat_id is not None:
-        params.append(group_chat_id)
+        params.extend([group_chat_id, group_chat_id, GLOBAL_MANUAL_POINTS_CHAT_ID])
         sql = """
         SELECT
             u.id,
@@ -74,7 +74,15 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
             COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
             COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
         FROM users u
-        INNER JOIN group_members gm ON gm.user_id = u.id AND gm.chat_id = ?
+        INNER JOIN (
+            SELECT gm.user_id
+            FROM group_members gm
+            WHERE gm.chat_id = ?
+            UNION
+            SELECT u2.id AS user_id
+            FROM users u2
+            WHERE u2.active_group_chat_id = ?
+        ) scope ON scope.user_id = u.id
         LEFT JOIN group_manual_points gmp
             ON gmp.user_id = u.id AND gmp.chat_id = ?
         LEFT JOIN predictions p ON p.user_id = u.id
@@ -82,7 +90,6 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
         HAVING COALESCE(MAX(gmp.points), 0) > 0 OR COUNT(p.id) > 0
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
         """
-        params.append(GLOBAL_MANUAL_POINTS_CHAT_ID)
         return sql, params
 
     sql = """
@@ -1547,10 +1554,58 @@ def save_prediction(
 
 
 def link_prediction_to_active_group(user_id: int, chat_id: int | None = None) -> None:
-    """Register the user in their active group so predictions show on group leaderboard."""
-    group_chat_id = chat_id or get_user_active_group(user_id)
-    if group_chat_id:
-        register_group_member(group_chat_id, user_id)
+    """Register the user in their group so predictions count on the group leaderboard."""
+    if chat_id:
+        set_user_active_group(user_id, chat_id)
+        return
+
+    active = get_user_active_group(user_id)
+    if active:
+        register_group_member(active, user_id)
+        return
+
+    groups = get_user_group_chat_ids(user_id)
+    if len(groups) == 1:
+        register_group_member(groups[0], user_id)
+
+
+def sync_predictors_to_group_members() -> int:
+    """Backfill group membership for users who have predictions but were not registered."""
+    from group_standings import LEGACY_KM3NA_GROUP_CHAT_ID
+
+    linked = 0
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT u.id, u.active_group_chat_id
+            FROM users u
+            INNER JOIN predictions p ON p.user_id = u.id
+            WHERE u.active_group_chat_id IS NOT NULL
+              AND u.active_group_chat_id != ?
+            """,
+            (LEGACY_KM3NA_GROUP_CHAT_ID,),
+        ).fetchall()
+    for row in rows:
+        register_group_member(int(row["active_group_chat_id"]), int(row["id"]))
+        linked += 1
+
+    with get_db() as conn:
+        orphan_rows = conn.execute(
+            """
+            SELECT u.id
+            FROM users u
+            INNER JOIN predictions p ON p.user_id = u.id
+            WHERE u.active_group_chat_id IS NULL
+            GROUP BY u.id
+            """
+        ).fetchall()
+    for row in orphan_rows:
+        user_id = int(row["id"])
+        groups = get_user_group_chat_ids(user_id)
+        if len(groups) == 1:
+            register_group_member(groups[0], user_id)
+            linked += 1
+    return linked
 
 
 def save_prediction_draft(
@@ -1827,6 +1882,7 @@ def get_leaderboard(
 ) -> list[LeaderboardEntry]:
     if group_chat_id is not None:
         refresh_group_auto_points(group_chat_id)
+        sync_predictors_to_group_members()
     recalculate_all_prediction_points()
     sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:
@@ -1839,6 +1895,7 @@ def get_user_leaderboard_entry(
 ) -> LeaderboardEntry | None:
     if group_chat_id is not None:
         refresh_group_auto_points(group_chat_id)
+        sync_predictors_to_group_members()
     recalculate_all_prediction_points()
     sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:
@@ -1865,7 +1922,15 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
                 FROM (
                     SELECT u.id
                     FROM users u
-                    INNER JOIN group_members gm ON gm.user_id = u.id AND gm.chat_id = ?
+                    INNER JOIN (
+                        SELECT gm.user_id
+                        FROM group_members gm
+                        WHERE gm.chat_id = ?
+                        UNION
+                        SELECT u2.id AS user_id
+                        FROM users u2
+                        WHERE u2.active_group_chat_id = ?
+                    ) scope ON scope.user_id = u.id
                     LEFT JOIN group_manual_points gmp
                         ON gmp.user_id = u.id AND gmp.chat_id = ?
                     LEFT JOIN predictions p ON p.user_id = u.id
@@ -1873,7 +1938,7 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
                     HAVING COALESCE(MAX(gmp.points), 0) > 0 OR COUNT(p.id) > 0
                 )
                 """,
-                (group_chat_id, GLOBAL_MANUAL_POINTS_CHAT_ID),
+                (group_chat_id, group_chat_id, GLOBAL_MANUAL_POINTS_CHAT_ID),
             ).fetchone()[0]
         )
 
@@ -1914,6 +1979,7 @@ def reset_to_league_season() -> dict[str, int | str]:
     seed = seed_league_season_matches()
     backfill_match_kickoff_times()
     sync_match_open_flags()
+    sync_predictors_to_group_members()
     logger.warning(
         "League season reset: %d predictions cleared, %d matches seeded",
         removed.get("predictions", 0),

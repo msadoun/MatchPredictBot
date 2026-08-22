@@ -18,6 +18,7 @@ from database import (
     sync_auto_group_points,
     sync_live_match_scores,
     sync_match_open_flags,
+    sync_predictors_to_group_members,
 )
 from handlers import (
     add_match_command,
@@ -276,6 +277,9 @@ def main() -> None:
         registered = sync_auto_group_points()
         if registered:
             logger.info("Registered auto-point users in %d group(s)", registered)
+    linked = sync_predictors_to_group_members()
+    if linked:
+        logger.info("Linked %d predictor(s) to their group for leaderboard", linked)
     seed_result = ensure_world_cup_seeded()
     if seed_result["added"]:
         logger.info("Seeded %d World Cup matches on startup", seed_result["added"])
