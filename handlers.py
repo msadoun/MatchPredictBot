@@ -230,19 +230,18 @@ async def send_leaderboard(
     *,
     group_chat_id: int | None = None,
 ) -> None:
-    is_group_scope = group_chat_id is not None and group_chat_id != 0
+    effective_group = db.resolve_leaderboard_group_chat_id(group_chat_id)
+    is_group_scope = effective_group is not None
     group_name: str | None = None
     if is_group_scope:
-        group_name = await _resolve_group_display_name(context, group_chat_id)
+        group_name = await _resolve_group_display_name(context, effective_group)
 
-    entries = db.get_leaderboard(limit=15, group_chat_id=group_chat_id if is_group_scope else None)
-    total = db.count_leaderboard_participants(
-        group_chat_id=group_chat_id if is_group_scope else None
-    )
+    entries = db.get_leaderboard(limit=15, group_chat_id=group_chat_id)
+    total = db.count_leaderboard_participants(group_chat_id=group_chat_id)
     viewer_entry = (
         db.get_user_leaderboard_entry(
             viewer_telegram_id,
-            group_chat_id=group_chat_id if is_group_scope else None,
+            group_chat_id=group_chat_id,
         )
         if viewer_telegram_id
         else None
@@ -290,7 +289,8 @@ def _resolve_leaderboard_group(
     stored = context.user_data.get("leaderboard_group_chat_id")
     if stored:
         chat_id = int(stored)
-        if chat_id in db.get_user_group_chat_ids(participant.id):
+        primary = db.primary_group_chat_id()
+        if chat_id in db.get_user_group_chat_ids(participant.id) or chat_id == primary:
             return chat_id, False
         context.user_data.pop("leaderboard_group_chat_id", None)
 
@@ -305,6 +305,12 @@ def _resolve_leaderboard_group(
         return groups[0], False
     if len(groups) > 1:
         return None, True
+
+    primary = db.primary_group_chat_id()
+    if primary is not None:
+        context.user_data["leaderboard_group_chat_id"] = primary
+        return primary, False
+
     return None, False
 
 
@@ -1161,6 +1167,12 @@ def _ensure_prediction_group_context(
     if active:
         context.user_data["leaderboard_group_chat_id"] = active
         db.link_prediction_to_active_group(participant.id, active)
+        return
+
+    primary = db.primary_group_chat_id()
+    if primary is not None:
+        db.set_user_active_group(participant.id, primary)
+        context.user_data["leaderboard_group_chat_id"] = primary
 
 
 async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

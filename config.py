@@ -32,6 +32,12 @@ def configured_group_chat_ids() -> list[int]:
         ids.append(int(ALKORAM3NA_GROUP_CHAT_ID))
     return ids
 
+
+def primary_group_chat_id() -> int | None:
+    """Configured alkora group, or None when unset."""
+    ids = configured_group_chat_ids()
+    return ids[0] if ids else None
+
 _DEFAULT_PREDICTION_BACKFILLS = ""
 _raw_backfills = os.getenv("PREDICTION_BACKFILLS")
 if _raw_backfills is None:
