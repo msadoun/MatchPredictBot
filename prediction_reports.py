@@ -260,16 +260,17 @@ def _double_points_table_label(is_doubled: bool) -> str:
     return "X2" if is_doubled else ""
 
 
-def build_match_table_rows(match: Match) -> list[tuple[str, str, bool]]:
+def build_match_table_rows(match: Match) -> list[tuple[str, str, bool, int | None]]:
     from database import list_predictions_for_match
 
-    rows: list[tuple[str, str, bool]] = []
+    rows: list[tuple[str, str, bool, int | None]] = []
     for user, prediction in list_predictions_for_match(match.id):
         rows.append(
             (
                 user.display_name,
                 _score_line(match, prediction.home_score, prediction.away_score),
                 bool(prediction.is_doubled),
+                prediction.points,
             )
         )
     return rows
@@ -278,7 +279,7 @@ def build_match_table_rows(match: Match) -> list[tuple[str, str, bool]]:
 def build_match_photo_rows(match: Match) -> list[tuple[str, str, str]]:
     return [
         (user, prediction, "yes" if is_doubled else "no")
-        for user, prediction, is_doubled in build_match_table_rows(match)
+        for user, prediction, is_doubled, _points in build_match_table_rows(match)
     ]
 
 
@@ -304,11 +305,13 @@ def format_match_prediction_table(match: Match) -> str:
         return "\n".join(lines)
 
     user_blocks: list[str] = []
-    for index, (user, prediction, is_doubled) in enumerate(rows, start=1):
+    for index, (user, prediction, is_doubled, points) in enumerate(rows, start=1):
         block_lines = [
             f"{_LTR}{index}. {user}",
             f"{_LTR}   التوقع: {prediction}",
         ]
+        if match.home_score is not None and match.away_score is not None:
+            block_lines.append(f"{_LTR}   النقاط: {points if points is not None else 0}")
         double_label = _double_points_table_label(is_doubled)
         if double_label:
             block_lines.append(f"{_LTR}   {double_label}")

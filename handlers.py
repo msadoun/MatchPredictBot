@@ -1140,6 +1140,29 @@ async def _prompt_winner_pick(
         )
 
 
+def _ensure_prediction_group_context(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    participant: db.User,
+) -> None:
+    """Keep active group in sync so prediction points appear on the group leaderboard."""
+    group_chat_id = _group_chat_id(update)
+    if group_chat_id:
+        db.set_user_active_group(participant.id, group_chat_id)
+        context.user_data["leaderboard_group_chat_id"] = group_chat_id
+        return
+
+    stored = context.user_data.get("leaderboard_group_chat_id")
+    if stored:
+        db.link_prediction_to_active_group(participant.id, int(stored))
+        return
+
+    active = db.get_user_active_group(participant.id)
+    if active:
+        context.user_data["leaderboard_group_chat_id"] = active
+        db.link_prediction_to_active_group(participant.id, active)
+
+
 async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not user:
@@ -1147,6 +1170,8 @@ async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     _ensure_participant(update)
     participant = db.get_user_by_telegram_id(user.id)
+    if participant:
+        _ensure_prediction_group_context(update, context, participant)
     _clear_prediction_state(context, participant.id if participant else None)
     group_chat_id = _group_chat_id(update)
     if group_chat_id and participant:
@@ -1244,6 +1269,8 @@ async def predict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     participant = _ensure_participant(update)
     user_db_id = participant.id if participant else None
+    if participant:
+        _ensure_prediction_group_context(update, context, participant)
     parts = query.data.split(":")
     if not parts or parts[0] != "pred":
         return
