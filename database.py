@@ -115,72 +115,28 @@ def _default_prediction_group_chat_id() -> int | None:
     return primary_group_chat_id()
 
 
-def _group_leaderboard_scope_sql() -> str:
-    """Users visible on a group leaderboard (members, active group, manual base, predictors)."""
-    return f"""
-            SELECT gm.user_id
-            FROM group_members gm
-            WHERE gm.chat_id = ?
-            UNION
-            SELECT u2.id AS user_id
-            FROM users u2
-            WHERE u2.active_group_chat_id = ?
-            UNION
-            SELECT gmp.user_id
-            FROM group_manual_points gmp
-            WHERE gmp.chat_id = {GLOBAL_MANUAL_POINTS_CHAT_ID} AND gmp.points > 0
-            UNION
-            SELECT DISTINCT p.user_id
-            FROM predictions p
+def _has_predictions_sql() -> str:
+    return """
+        EXISTS (
+            SELECT 1
+            FROM predictions pp
+            WHERE pp.user_id = u.id
+        )
     """
 
 
-def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object]]:
-    effective_group = resolve_leaderboard_group_chat_id(group_chat_id)
-    params: list[object] = []
-    if effective_group is not None:
-        params.extend([effective_group, effective_group])
-        manual_base = _manual_base_sql()
-        prediction_points = _prediction_points_sql()
-        sql = f"""
-        SELECT
-            u.id,
-            u.telegram_id,
-            u.display_name,
-            u.username,
-            ({manual_base}) + ({prediction_points}) AS total_points,
-            COALESCE((
-                SELECT COUNT(*)
-                FROM predictions pp
-                WHERE pp.user_id = u.id
-            ), 0) AS predictions_count,
-            COALESCE((
-                SELECT SUM(CASE WHEN pp.points IN (3, 6) THEN 1 ELSE 0 END)
-                FROM predictions pp
-                WHERE pp.user_id = u.id
-            ), 0) AS exact_hits,
-            COALESCE((
-                SELECT SUM(CASE WHEN pp.points = 2 THEN 1 ELSE 0 END)
-                FROM predictions pp
-                WHERE pp.user_id = u.id
-            ), 0) AS goal_hits,
-            COALESCE((
-                SELECT SUM(CASE WHEN pp.points = 1 THEN 1 ELSE 0 END)
-                FROM predictions pp
-                WHERE pp.user_id = u.id
-            ), 0) AS winner_hits
-        FROM users u
-        INNER JOIN (
-            {_group_leaderboard_scope_sql()}
-        ) scope ON scope.user_id = u.id
-        GROUP BY u.id
-        HAVING ({manual_base}) > 0 OR ({prediction_points}) > 0
-        ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
-        """
-        return sql, params
+def _leaderboard_visibility_sql() -> str:
+    """Users who should appear on the leaderboard."""
+    manual_base = _manual_base_sql()
+    has_predictions = _has_predictions_sql()
+    return f"({manual_base}) > 0 OR {has_predictions}"
 
+
+def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object]]:
+    del group_chat_id  # same ranking for all scopes — predictions are global
     manual_base = _manual_base_sql()
     prediction_points = _prediction_points_sql()
+    visibility = _leaderboard_visibility_sql()
     sql = f"""
         SELECT
             u.id,
@@ -209,10 +165,10 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
                 WHERE pp.user_id = u.id
             ), 0) AS winner_hits
         FROM users u
-        WHERE ({manual_base}) > 0 OR ({prediction_points}) > 0
+        WHERE {visibility}
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
     """
-    return sql, params
+    return sql, []
 
 
 def _row_to_leaderboard_entry(row: sqlite3.Row, rank: int) -> LeaderboardEntry:
@@ -2039,36 +1995,12 @@ def get_user_leaderboard_entry(
 
 
 def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
-    effective_group = resolve_leaderboard_group_chat_id(group_chat_id)
+    sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:
-        if effective_group is None:
-            sql, params = _leaderboard_sql(None)
-            return int(
-                conn.execute(
-                    f"SELECT COUNT(*) FROM ({sql})",
-                    params,
-                ).fetchone()[0]
-            )
-        manual_base = _manual_base_sql()
-        prediction_points = _prediction_points_sql()
         return int(
             conn.execute(
-                f"""
-                SELECT COUNT(*)
-                FROM (
-                    SELECT u.id
-                    FROM users u
-                    INNER JOIN (
-                        {_group_leaderboard_scope_sql()}
-                    ) scope ON scope.user_id = u.id
-                    GROUP BY u.id
-                    HAVING ({manual_base}) > 0 OR ({prediction_points}) > 0
-                )
-                """,
-                (
-                    effective_group,
-                    effective_group,
-                ),
+                f"SELECT COUNT(*) FROM ({sql})",
+                params,
             ).fetchone()[0]
         )
 

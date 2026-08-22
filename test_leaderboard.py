@@ -15,6 +15,20 @@ def _fresh_db():
     return db
 
 
+def test_leaderboard_includes_users_with_unscored_predictions():
+    db = _fresh_db()
+    user_a = db.upsert_user(601, "alpha", "Alpha")
+    user_b = db.upsert_user(602, "beta", "Beta")
+    match = db.add_match("Home", "Away", "2031-01-01T12:00:00")
+    db.save_prediction(user_a.id, match.id, 2, 1)
+    db.save_prediction(user_b.id, match.id, 0, 0)
+
+    entries = db.get_leaderboard()
+    assert len(entries) == 2
+    assert entries[0].total_points == 0
+    assert entries[1].total_points == 0
+
+
 def test_group_leaderboard_includes_orphan_predictor_without_membership():
     db = _fresh_db()
     group_id = -1001234567890
