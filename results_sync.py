@@ -47,16 +47,18 @@ TEAM_ALIASES: dict[str, str] = {
 
 
 def _english_to_arabic(name: str) -> str:
+    from teams_ar import canonical_team_name
+
     canonical = TEAM_ALIASES.get(name, name)
     if canonical in TEAM_EN_TO_AR:
-        return TEAM_EN_TO_AR[canonical]
+        return canonical_team_name(TEAM_EN_TO_AR[canonical])
 
     normalized = canonical.replace("-", " ").strip().lower()
     for english, arabic in TEAM_EN_TO_AR.items():
         english_norm = english.replace("-", " ").strip().lower()
         if english_norm == normalized:
-            return arabic
-    return TEAM_EN_TO_AR.get(canonical, canonical)
+            return canonical_team_name(arabic)
+    return canonical_team_name(TEAM_EN_TO_AR.get(canonical, canonical))
 
 
 def _event_is_finished(event: dict) -> bool:
@@ -98,12 +100,8 @@ def _scoreboard_leagues_for_match(kickoff_at: str | None) -> list[str]:
 
 
 def active_scoreboard_leagues() -> list[str]:
-    """Leagues polled on each background sync."""
-    from database import is_league_season_loaded
-
-    if is_league_season_loaded():
-        return ["esp.1", "eng.1", "uefa.champions"]
-    return [WORLD_CUP_LEAGUE]
+    """Leagues polled on each background sync — always include domestic + UCL."""
+    return ["esp.1", "eng.1", "uefa.champions", WORLD_CUP_LEAGUE]
 
 
 def _fetch_scoreboard(date_yyyymmdd: str, league: str) -> list[dict]:
@@ -162,7 +160,11 @@ def _fetch_scoreboard(date_yyyymmdd: str, league: str) -> list[dict]:
 
 
 def _find_match_id(home_ar: str, away_ar: str, iso_date: str) -> int | None:
+    from teams_ar import canonical_team_name
     from worldcup2026 import match_day_date
+
+    home_ar = canonical_team_name(home_ar)
+    away_ar = canonical_team_name(away_ar)
 
     with get_db() as conn:
         for date_prefix in {iso_date}:

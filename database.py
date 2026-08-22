@@ -1345,12 +1345,18 @@ def set_match_result(
 
 def refresh_finished_match_scores() -> int:
     """Import ESPN results for started matches and recalculate all prediction points."""
-    from results_sync import import_results_for_finished_matches
+    from results_sync import (
+        clear_scoreboard_cache,
+        import_results_for_finished_matches,
+        sync_match_results_from_espn,
+    )
 
+    clear_scoreboard_cache()
     sync_match_open_flags()
     imported = import_results_for_finished_matches()
+    espn = sync_match_results_from_espn(days_back=7, days_ahead=1)
     recalculate_all_prediction_points()
-    return imported
+    return imported + espn["updated"]
 
 
 def score_all_finished_matches() -> dict[str, int]:
