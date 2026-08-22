@@ -48,6 +48,25 @@ def test_group_leaderboard_includes_manual_base_without_group_membership():
     assert entries[0].total_points == 15
 
 
+def test_leaderboard_defaults_to_configured_group_without_explicit_scope():
+    db = _fresh_db()
+    group_id = -1001260044677
+    os.environ["ALKORAM3NA_GROUP_CHAT_ID"] = str(group_id)
+    import config
+
+    importlib.reload(config)
+
+    user = db.upsert_user(555, "player5", "Player Five")
+    db.set_group_manual_points(group_id, user.id, 20)
+    match = db.add_match("G", "H", "2030-08-25T12:00:00")
+    db.save_prediction(user.id, match.id, 2, 0)
+    db.set_match_result(match.id, 2, 0)
+
+    entries = db.get_leaderboard(group_chat_id=None)
+    assert len(entries) == 1
+    assert entries[0].total_points == 23
+
+
 def test_group_leaderboard_includes_predictor_with_active_group_only():
     db = _fresh_db()
     group_id = -1001234567890

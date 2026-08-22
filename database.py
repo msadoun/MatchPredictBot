@@ -58,19 +58,66 @@ class LeaderboardEntry:
     winner_hits: int
 
 
+def _prediction_points_sql() -> str:
+    return """
+        COALESCE((
+            SELECT SUM(COALESCE(pp.points, 0))
+            FROM predictions pp
+            WHERE pp.user_id = u.id
+        ), 0)
+    """
+
+
+def _manual_base_sql() -> str:
+    return f"""
+        COALESCE((
+            SELECT gmp2.points
+            FROM group_manual_points gmp2
+            WHERE gmp2.user_id = u.id AND gmp2.chat_id = {GLOBAL_MANUAL_POINTS_CHAT_ID}
+            LIMIT 1
+        ), 0)
+    """
+
+
+def resolve_leaderboard_group_chat_id(group_chat_id: int | None = None) -> int | None:
+    """Pick the group whose leaderboard should be shown."""
+    if group_chat_id is not None and group_chat_id != 0:
+        return group_chat_id
+    return primary_group_chat_id()
+
+
+def primary_group_chat_id() -> int | None:
+    """Configured alkora group, else the group with the most registered members."""
+    from config import primary_group_chat_id as configured_primary
+    from group_standings import LEGACY_KM3NA_GROUP_CHAT_ID
+
+    configured = configured_primary()
+    if configured is not None:
+        return configured
+
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT chat_id, COUNT(*) AS member_count
+            FROM group_members
+            WHERE chat_id != ?
+            GROUP BY chat_id
+            ORDER BY member_count DESC, chat_id ASC
+            LIMIT 1
+            """,
+            (LEGACY_KM3NA_GROUP_CHAT_ID,),
+        ).fetchone()
+    return int(row["chat_id"]) if row else None
+
+
 def _default_prediction_group_chat_id() -> int | None:
     """Primary group for league predictions when the user has no stored group."""
-    from config import configured_group_chat_ids
-
-    chat_ids = configured_group_chat_ids()
-    if len(chat_ids) == 1:
-        return chat_ids[0]
-    return None
+    return primary_group_chat_id()
 
 
 def _group_leaderboard_scope_sql() -> str:
     """Users visible on a group leaderboard (members, active group, manual base, predictors)."""
-    return """
+    return f"""
             SELECT gm.user_id
             FROM group_members gm
             WHERE gm.chat_id = ?
@@ -81,7 +128,7 @@ def _group_leaderboard_scope_sql() -> str:
             UNION
             SELECT gmp.user_id
             FROM group_manual_points gmp
-            WHERE gmp.chat_id = ? AND gmp.points > 0
+            WHERE gmp.chat_id = {GLOBAL_MANUAL_POINTS_CHAT_ID} AND gmp.points > 0
             UNION
             SELECT DISTINCT p.user_id
             FROM predictions p
@@ -89,54 +136,80 @@ def _group_leaderboard_scope_sql() -> str:
 
 
 def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object]]:
+    effective_group = resolve_leaderboard_group_chat_id(group_chat_id)
     params: list[object] = []
-    if group_chat_id is not None:
-        params.extend(
-            [
-                group_chat_id,
-                group_chat_id,
-                GLOBAL_MANUAL_POINTS_CHAT_ID,
-                GLOBAL_MANUAL_POINTS_CHAT_ID,
-            ]
-        )
+    if effective_group is not None:
+        params.extend([effective_group, effective_group])
+        manual_base = _manual_base_sql()
+        prediction_points = _prediction_points_sql()
         sql = f"""
         SELECT
             u.id,
             u.telegram_id,
             u.display_name,
             u.username,
-            COALESCE(MAX(gmp.points), 0) + COALESCE(SUM(p.points), 0) AS total_points,
-            COUNT(p.id) AS predictions_count,
-            COALESCE(SUM(CASE WHEN p.points IN (3, 6) THEN 1 ELSE 0 END), 0) AS exact_hits,
-            COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
-            COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
+            ({manual_base}) + ({prediction_points}) AS total_points,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM predictions pp
+                WHERE pp.user_id = u.id
+            ), 0) AS predictions_count,
+            COALESCE((
+                SELECT SUM(CASE WHEN pp.points IN (3, 6) THEN 1 ELSE 0 END)
+                FROM predictions pp
+                WHERE pp.user_id = u.id
+            ), 0) AS exact_hits,
+            COALESCE((
+                SELECT SUM(CASE WHEN pp.points = 2 THEN 1 ELSE 0 END)
+                FROM predictions pp
+                WHERE pp.user_id = u.id
+            ), 0) AS goal_hits,
+            COALESCE((
+                SELECT SUM(CASE WHEN pp.points = 1 THEN 1 ELSE 0 END)
+                FROM predictions pp
+                WHERE pp.user_id = u.id
+            ), 0) AS winner_hits
         FROM users u
         INNER JOIN (
             {_group_leaderboard_scope_sql()}
         ) scope ON scope.user_id = u.id
-        LEFT JOIN group_manual_points gmp
-            ON gmp.user_id = u.id AND gmp.chat_id = ?
-        LEFT JOIN predictions p ON p.user_id = u.id
         GROUP BY u.id
-        HAVING COALESCE(MAX(gmp.points), 0) > 0 OR COUNT(p.id) > 0
+        HAVING ({manual_base}) > 0 OR ({prediction_points}) > 0
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
         """
         return sql, params
 
-    sql = """
+    manual_base = _manual_base_sql()
+    prediction_points = _prediction_points_sql()
+    sql = f"""
         SELECT
             u.id,
             u.telegram_id,
             u.display_name,
             u.username,
-            COALESCE(SUM(p.points), 0) AS total_points,
-            COUNT(p.id) AS predictions_count,
-            COALESCE(SUM(CASE WHEN p.points IN (3, 6) THEN 1 ELSE 0 END), 0) AS exact_hits,
-            COALESCE(SUM(CASE WHEN p.points = 2 THEN 1 ELSE 0 END), 0) AS goal_hits,
-            COALESCE(SUM(CASE WHEN p.points = 1 THEN 1 ELSE 0 END), 0) AS winner_hits
+            ({manual_base}) + ({prediction_points}) AS total_points,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM predictions pp
+                WHERE pp.user_id = u.id
+            ), 0) AS predictions_count,
+            COALESCE((
+                SELECT SUM(CASE WHEN pp.points IN (3, 6) THEN 1 ELSE 0 END)
+                FROM predictions pp
+                WHERE pp.user_id = u.id
+            ), 0) AS exact_hits,
+            COALESCE((
+                SELECT SUM(CASE WHEN pp.points = 2 THEN 1 ELSE 0 END)
+                FROM predictions pp
+                WHERE pp.user_id = u.id
+            ), 0) AS goal_hits,
+            COALESCE((
+                SELECT SUM(CASE WHEN pp.points = 1 THEN 1 ELSE 0 END)
+                FROM predictions pp
+                WHERE pp.user_id = u.id
+            ), 0) AS winner_hits
         FROM users u
-        INNER JOIN predictions p ON p.user_id = u.id
-        GROUP BY u.id
+        WHERE ({manual_base}) > 0 OR ({prediction_points}) > 0
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
     """
     return sql, params
@@ -558,8 +631,8 @@ def get_user_active_group(user_id: int) -> int | None:
 
         if chat_id == LEGACY_KM3NA_GROUP_CHAT_ID:
             return None
-        if chat_id in get_user_group_chat_ids(user_id):
-            return chat_id
+        register_group_member(chat_id, user_id)
+        return chat_id
     return None
 
 
@@ -1310,6 +1383,7 @@ def set_match_result(
     from knockout_teams import sync_knockout_team_names
 
     sync_knockout_team_names()
+    sync_predictors_to_group_members()
     return _row_to_match(row) if row else None
 
 
@@ -1935,8 +2009,9 @@ def get_user_group_chat_ids(user_id: int) -> list[int]:
 def get_leaderboard(
     limit: int = 20, group_chat_id: int | None = None
 ) -> list[LeaderboardEntry]:
-    if group_chat_id is not None:
-        refresh_group_auto_points(group_chat_id)
+    effective_group = resolve_leaderboard_group_chat_id(group_chat_id)
+    if effective_group is not None:
+        refresh_group_auto_points(effective_group)
         sync_predictors_to_group_members()
     recalculate_all_prediction_points()
     sql, params = _leaderboard_sql(group_chat_id)
@@ -1948,8 +2023,9 @@ def get_leaderboard(
 def get_user_leaderboard_entry(
     telegram_id: int, group_chat_id: int | None = None
 ) -> LeaderboardEntry | None:
-    if group_chat_id is not None:
-        refresh_group_auto_points(group_chat_id)
+    effective_group = resolve_leaderboard_group_chat_id(group_chat_id)
+    if effective_group is not None:
+        refresh_group_auto_points(effective_group)
         sync_predictors_to_group_members()
     recalculate_all_prediction_points()
     sql, params = _leaderboard_sql(group_chat_id)
@@ -1963,13 +2039,18 @@ def get_user_leaderboard_entry(
 
 
 def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
+    effective_group = resolve_leaderboard_group_chat_id(group_chat_id)
     with get_db() as conn:
-        if group_chat_id is None:
+        if effective_group is None:
+            sql, params = _leaderboard_sql(None)
             return int(
                 conn.execute(
-                    "SELECT COUNT(DISTINCT user_id) FROM predictions"
+                    f"SELECT COUNT(*) FROM ({sql})",
+                    params,
                 ).fetchone()[0]
             )
+        manual_base = _manual_base_sql()
+        prediction_points = _prediction_points_sql()
         return int(
             conn.execute(
                 f"""
@@ -1980,18 +2061,13 @@ def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
                     INNER JOIN (
                         {_group_leaderboard_scope_sql()}
                     ) scope ON scope.user_id = u.id
-                    LEFT JOIN group_manual_points gmp
-                        ON gmp.user_id = u.id AND gmp.chat_id = ?
-                    LEFT JOIN predictions p ON p.user_id = u.id
                     GROUP BY u.id
-                    HAVING COALESCE(MAX(gmp.points), 0) > 0 OR COUNT(p.id) > 0
+                    HAVING ({manual_base}) > 0 OR ({prediction_points}) > 0
                 )
                 """,
                 (
-                    group_chat_id,
-                    group_chat_id,
-                    GLOBAL_MANUAL_POINTS_CHAT_ID,
-                    GLOBAL_MANUAL_POINTS_CHAT_ID,
+                    effective_group,
+                    effective_group,
                 ),
             ).fetchone()[0]
         )
