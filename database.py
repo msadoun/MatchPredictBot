@@ -1343,6 +1343,16 @@ def set_match_result(
     return _row_to_match(row) if row else None
 
 
+def refresh_finished_match_scores() -> int:
+    """Import ESPN results for started matches and recalculate all prediction points."""
+    from results_sync import import_results_for_finished_matches
+
+    sync_match_open_flags()
+    imported = import_results_for_finished_matches()
+    recalculate_all_prediction_points()
+    return imported
+
+
 def score_all_finished_matches() -> dict[str, int]:
     """Import ESPN results and recalculate points for every user prediction."""
     return sync_live_match_scores(full_scan=True)
@@ -1969,7 +1979,7 @@ def get_leaderboard(
     if effective_group is not None:
         refresh_group_auto_points(effective_group)
         sync_predictors_to_group_members()
-    recalculate_all_prediction_points()
+    refresh_finished_match_scores()
     sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:
         rows = conn.execute(f"{sql} LIMIT ?", (*params, limit)).fetchall()
@@ -1983,7 +1993,7 @@ def get_user_leaderboard_entry(
     if effective_group is not None:
         refresh_group_auto_points(effective_group)
         sync_predictors_to_group_members()
-    recalculate_all_prediction_points()
+    refresh_finished_match_scores()
     sql, params = _leaderboard_sql(group_chat_id)
     with get_db() as conn:
         rows = conn.execute(sql, params).fetchall()
