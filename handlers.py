@@ -1535,7 +1535,7 @@ async def my_predictions_command(
         return
 
     _track_group_member(update, participant)
-    db.recalculate_all_prediction_points()
+    db.refresh_finished_match_scores()
     predictions = db.get_user_predictions(participant.id)
     if not predictions:
         await menu_screen_response(update, context, msg.NO_PREDICTIONS)
@@ -3089,6 +3089,7 @@ async def import_excel_command(
     lines = [
         msg.IMPORT_EXCEL_DONE.format(
             merged=result.merged,
+            results_imported=result.results_imported,
             points_updated=result.points_updated,
             skipped=result.skipped,
             group_points=result.group_points_applied,

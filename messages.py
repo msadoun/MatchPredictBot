@@ -424,6 +424,7 @@ RESTORE_PREDICTIONS_USAGE = (
 IMPORT_EXCEL_DONE = (
     "تم استيراد البيانات من Excel (دمج فقط — لم يُحذف أي توقع).\n"
     "• توقعات مضافة: {merged}\n"
+    "• نتائج مباريات من Excel: {results_imported}\n"
     "• نقاط محدّثة: {points_updated}\n"
     "• موجود مسبقاً (لم يُمس): {skipped}\n"
     "• نقاط مجموعة أساسية: {group_points}\n"

@@ -16,6 +16,7 @@ from database import (
     merge_prediction_if_missing,
     recalculate_all_prediction_points,
     resolve_user_ref,
+    set_match_result,
     upsert_user,
     _row_to_user,
 )
@@ -36,6 +37,7 @@ class ExcelImportResult:
     merged: int = 0
     skipped: int = 0
     points_updated: int = 0
+    results_imported: int = 0
     users_created: int = 0
     users_not_found: list[str] | None = None
     matches_not_found: list[str] | None = None
@@ -186,6 +188,20 @@ def import_predictions_from_excel(path: Path) -> ExcelImportResult:
                 result.skipped += 1
                 continue
 
+            result_text = cells[2].strip() if len(cells) > 2 else ""
+            if result_text and (
+                match.home_score is None or match.away_score is None
+            ):
+                parsed_result = _parse_prediction(result_text)
+                if parsed_result:
+                    res_home, res_home_score, res_away_score, res_away = parsed_result
+                    if res_home == match.home_team and res_away == match.away_team:
+                        set_match_result(
+                            match.id, res_home_score, res_away_score
+                        )
+                        result.results_imported += 1
+                        match = get_match(match.id)
+
             user, created = _ensure_user(user_name)
             if not user:
                 if user_name not in result.users_not_found:
@@ -232,6 +248,7 @@ def import_all_excel_sources(*, include_exports: bool = True) -> ExcelImportResu
         combined.merged += partial.merged
         combined.skipped += partial.skipped
         combined.points_updated += partial.points_updated
+        combined.results_imported += partial.results_imported
         combined.users_created += partial.users_created
         combined.files_read.extend(partial.files_read)
         for item in partial.users_not_found:
