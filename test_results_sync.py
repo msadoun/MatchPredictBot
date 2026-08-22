@@ -30,10 +30,42 @@ def test_scoreboard_leagues_for_premier_league_fixture():
     assert rs._scoreboard_leagues_for_match(kickoff) == ["eng.1"]
 
 
-def test_active_scoreboard_leagues_when_league_season_loaded():
+def test_active_scoreboard_leagues_includes_all_competitions():
     db, rs = _fresh_db()
     db.add_match("A", "B", "2026-08-22T12:00:00 · الجولة 1 · الدوري الإسباني")
-    assert rs.active_scoreboard_leagues() == ["esp.1", "eng.1", "uefa.champions"]
+    assert rs.active_scoreboard_leagues() == [
+        "esp.1",
+        "eng.1",
+        "uefa.champions",
+        "fifa.world",
+    ]
+
+
+def test_espn_coventry_name_matches_league_fixture():
+    db, rs = _fresh_db()
+    match = db.add_match(
+        "أرسنال",
+        "كونتري",
+        "2030-08-21T19:00:00 · الجولة 1 · الدوري الإنجليزي",
+    )
+
+    assert rs._find_match_id("أرسنال", "كوفنتري", "2030-08-21") == match.id
+
+    fake_result = {
+        "date": "2030-08-21",
+        "home_ar": "أرسنال",
+        "away_ar": "كونتري",
+        "home_score": 3,
+        "away_score": 0,
+        "league": "eng.1",
+    }
+
+    with patch.object(rs, "_iter_scoreboard_results", return_value=[fake_result]):
+        assert rs.restore_match_result_from_espn(match.id)
+
+    updated = db.get_match(match.id)
+    assert updated.home_score == 3
+    assert updated.away_score == 0
 
 
 def test_espn_result_import_scores_predictions():

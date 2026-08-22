@@ -87,8 +87,8 @@ TEAM_EN_TO_AR: dict[str, str] = {
     "Brighton": "برايتون",
     "Celtic": "سلتيك",
     "Crystal Palace": "كريستال بالاس",
-    "Coventry City": "كوفنتري",
-    "Coventry": "كوفنتري",
+    "Coventry City": "كونتري",
+    "Coventry": "كونتري",
     "Como": "كومو",
     "Club Brugge": "كلوب بروج",
     "Elche": "إلتشي",
@@ -109,7 +109,7 @@ TEAM_EN_TO_AR: dict[str, str] = {
     "Real Oviedo": "ريال أوفييدo",
     "Shakhtar Donetsk": "شاختار دونيتسك",
     "Slavia Prague": "سلافيا براغ",
-    "Sunderland": "سندرلاند",
+    "Sunderland": "ساندرلاند",
     "Everton": "إيفرتون",
     "Fulham": "فولهام",
     "Girona": "جيرونا",
@@ -224,6 +224,18 @@ GROUP_EN_TO_AR: dict[str, str] = {
     "3rd place": "مباراة المركز الثالث",
     "Final": "النهائي",
 }
+
+# Alternate Arabic spellings → names used in league_season.py fixtures
+ARABIC_TEAM_ALIASES: dict[str, str] = {
+    "كوفنتري": "كونتري",
+    "سندرلاند": "ساندرلاند",
+}
+
+
+def canonical_team_name(name: str) -> str:
+    """Normalize to the Arabic name stored on match rows."""
+    text = normalize_team_name(name.strip())
+    return ARABIC_TEAM_ALIASES.get(text, text)
 
 
 def _arabic_indic_number(value: int) -> str:
