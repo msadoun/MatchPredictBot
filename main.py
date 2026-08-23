@@ -3,7 +3,7 @@ import logging
 import sys
 
 from telegram import BotCommand, BotCommandScopeChat, MenuButtonDefault
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, ChatMemberHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from config import BOT_TOKEN, PREDICTION_BACKFILLS, ADMIN_USER_IDS
 from database import (
@@ -29,6 +29,8 @@ from handlers import (
     close_match_command,
     open_match_command,
     group_welcome,
+    chat_member_updated,
+    group_member_left,
     help_command,
     leaderboard_command,
     leaderboard_callback,
@@ -367,6 +369,8 @@ def main() -> None:
     app.add_handler(CommandHandler("matchtable", match_table_command))
     app.add_handler(CommandHandler("matchphoto", match_photo_command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_welcome))
+    app.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, group_member_left))
+    app.add_handler(ChatMemberHandler(chat_member_updated, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^menu:"))
     app.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^lb:"))
     app.add_handler(CallbackQueryHandler(admin_predictions_callback, pattern=r"^adminpred:"))

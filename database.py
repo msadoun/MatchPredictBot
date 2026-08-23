@@ -133,10 +133,20 @@ def _leaderboard_visibility_sql() -> str:
 
 
 def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object]]:
-    del group_chat_id  # same ranking for all scopes — predictions are global
     manual_base = _manual_base_sql()
     prediction_points = _prediction_points_sql()
     visibility = _leaderboard_visibility_sql()
+    params: list[object] = []
+    group_filter = ""
+    if group_chat_id is not None and group_chat_id != 0:
+        group_filter = """
+        AND EXISTS (
+            SELECT 1
+            FROM group_members gm
+            WHERE gm.user_id = u.id AND gm.chat_id = ?
+        )
+        """
+        params.append(group_chat_id)
     sql = f"""
         SELECT
             u.id,
@@ -165,10 +175,11 @@ def _leaderboard_sql(group_chat_id: int | None = None) -> tuple[str, list[object
                 WHERE pp.user_id = u.id
             ), 0) AS winner_hits
         FROM users u
-        WHERE {visibility}
+        WHERE ({visibility})
+        {group_filter}
         ORDER BY total_points DESC, predictions_count DESC, u.display_name ASC
     """
-    return sql, []
+    return sql, params
 
 
 def _row_to_leaderboard_entry(row: sqlite3.Row, rank: int) -> LeaderboardEntry:
@@ -587,7 +598,9 @@ def get_user_active_group(user_id: int) -> int | None:
 
         if chat_id == LEGACY_KM3NA_GROUP_CHAT_ID:
             return None
-        register_group_member(chat_id, user_id)
+        if not is_group_member(chat_id, user_id):
+            clear_user_active_group(user_id)
+            return None
         return chat_id
     return None
 
@@ -1634,22 +1647,17 @@ def save_prediction(
 def link_prediction_to_active_group(user_id: int, chat_id: int | None = None) -> None:
     """Register the user in their group so predictions count on the group leaderboard."""
     if chat_id:
-        set_user_active_group(user_id, chat_id)
+        if is_group_member(chat_id, user_id):
+            set_user_active_group(user_id, chat_id)
         return
 
     active = get_user_active_group(user_id)
     if active:
-        register_group_member(active, user_id)
         return
 
     groups = get_user_group_chat_ids(user_id)
     if len(groups) == 1:
-        register_group_member(groups[0], user_id)
-        return
-
-    default_group = _default_prediction_group_chat_id()
-    if default_group:
-        set_user_active_group(user_id, default_group)
+        set_user_active_group(user_id, groups[0])
 
 
 def sync_predictors_to_group_members() -> int:
@@ -1689,21 +1697,6 @@ def sync_predictors_to_group_members() -> int:
         groups = get_user_group_chat_ids(user_id)
         if len(groups) == 1:
             register_group_member(groups[0], user_id)
-            linked_users.add(user_id)
-
-    default_group = _default_prediction_group_chat_id()
-    if default_group:
-        with get_db() as conn:
-            predictor_rows = conn.execute(
-                """
-                SELECT DISTINCT u.id
-                FROM users u
-                INNER JOIN predictions p ON p.user_id = u.id
-                """
-            ).fetchall()
-        for row in predictor_rows:
-            user_id = int(row["id"])
-            register_group_member(default_group, user_id)
             linked_users.add(user_id)
 
     return len(linked_users)
@@ -1877,6 +1870,42 @@ def register_group_member(chat_id: int, user_id: int) -> None:
         )
 
 
+def is_group_member(chat_id: int, user_id: int) -> bool:
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT 1 FROM group_members
+            WHERE chat_id = ? AND user_id = ?
+            LIMIT 1
+            """,
+            (chat_id, user_id),
+        ).fetchone()
+    return row is not None
+
+
+def clear_user_active_group(user_id: int) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET active_group_chat_id = NULL WHERE id = ?",
+            (user_id,),
+        )
+
+
+def unregister_group_member(chat_id: int, user_id: int) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM group_members WHERE chat_id = ? AND user_id = ?",
+            (chat_id, user_id),
+        )
+        conn.execute(
+            """
+            UPDATE users SET active_group_chat_id = NULL
+            WHERE id = ? AND active_group_chat_id = ?
+            """,
+            (user_id, chat_id),
+        )
+
+
 def ensure_auto_point_user() -> User:
     """Ensure @M2usab exists in users table for auto base points."""
     from config import M2USAB_TELEGRAM_ID, M2USAB_USERNAME
@@ -1986,7 +2015,7 @@ def get_leaderboard(
         refresh_group_auto_points(effective_group)
         sync_predictors_to_group_members()
     refresh_finished_match_scores()
-    sql, params = _leaderboard_sql(group_chat_id)
+    sql, params = _leaderboard_sql(effective_group)
     with get_db() as conn:
         rows = conn.execute(f"{sql} LIMIT ?", (*params, limit)).fetchall()
     return [_row_to_leaderboard_entry(row, index) for index, row in enumerate(rows, start=1)]
@@ -2000,7 +2029,7 @@ def get_user_leaderboard_entry(
         refresh_group_auto_points(effective_group)
         sync_predictors_to_group_members()
     refresh_finished_match_scores()
-    sql, params = _leaderboard_sql(group_chat_id)
+    sql, params = _leaderboard_sql(effective_group)
     with get_db() as conn:
         rows = conn.execute(sql, params).fetchall()
 
@@ -2011,7 +2040,8 @@ def get_user_leaderboard_entry(
 
 
 def count_leaderboard_participants(group_chat_id: int | None = None) -> int:
-    sql, params = _leaderboard_sql(group_chat_id)
+    effective_group = resolve_leaderboard_group_chat_id(group_chat_id)
+    sql, params = _leaderboard_sql(effective_group)
     with get_db() as conn:
         return int(
             conn.execute(

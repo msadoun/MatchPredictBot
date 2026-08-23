@@ -289,8 +289,7 @@ def _resolve_leaderboard_group(
     stored = context.user_data.get("leaderboard_group_chat_id")
     if stored:
         chat_id = int(stored)
-        primary = db.primary_group_chat_id()
-        if chat_id in db.get_user_group_chat_ids(participant.id) or chat_id == primary:
+        if chat_id in db.get_user_group_chat_ids(participant.id):
             return chat_id, False
         context.user_data.pop("leaderboard_group_chat_id", None)
 
@@ -305,11 +304,6 @@ def _resolve_leaderboard_group(
         return groups[0], False
     if len(groups) > 1:
         return None, True
-
-    primary = db.primary_group_chat_id()
-    if primary is not None:
-        context.user_data["leaderboard_group_chat_id"] = primary
-        return primary, False
 
     return None, False
 
@@ -592,11 +586,55 @@ async def group_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     bot_id = context.bot.id
     for member in message.new_chat_members:
-        if member.id != bot_id:
+        if member.id == bot_id:
+            await update.message.reply_text(msg.GROUP_WELCOME)
             continue
+        participant = db.upsert_user(
+            member.id,
+            member.username,
+            member.full_name or member.username or str(member.id),
+        )
+        db.register_group_member(message.chat.id, participant.id)
 
-        await update.message.reply_text(msg.GROUP_WELCOME)
+
+async def group_member_left(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.message
+    if not message or not message.left_chat_member:
         return
+    user = message.left_chat_member
+    if user.is_bot:
+        return
+    participant = db.get_user_by_telegram_id(user.id)
+    if participant:
+        db.unregister_group_member(message.chat.id, participant.id)
+
+
+async def chat_member_updated(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_member = update.chat_member
+    if not chat_member or not chat_member.new_chat_member:
+        return
+
+    user = chat_member.new_chat_member.user
+    if not user or user.is_bot:
+        return
+
+    chat_id = chat_member.chat.id
+    new_status = chat_member.new_chat_member.status
+    if new_status in ("left", "kicked", "banned"):
+        participant = db.get_user_by_telegram_id(user.id)
+        if participant:
+            db.unregister_group_member(chat_id, participant.id)
+        return
+
+    if new_status in ("member", "administrator", "creator"):
+        participant = db.get_user_by_telegram_id(user.id)
+        if not participant:
+            participant = db.upsert_user(
+                user.id,
+                user.username,
+                user.full_name or user.username or str(user.id),
+            )
+        db.register_group_member(chat_id, participant.id)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1167,12 +1205,6 @@ def _ensure_prediction_group_context(
     if active:
         context.user_data["leaderboard_group_chat_id"] = active
         db.link_prediction_to_active_group(participant.id, active)
-        return
-
-    primary = db.primary_group_chat_id()
-    if primary is not None:
-        db.set_user_active_group(participant.id, primary)
-        context.user_data["leaderboard_group_chat_id"] = primary
 
 
 async def predict_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
