@@ -68,6 +68,34 @@ def test_espn_coventry_name_matches_league_fixture():
     assert updated.away_score == 0
 
 
+def test_espn_afc_bournemouth_matches_man_city_fixture():
+    db, rs = _fresh_db()
+    match = db.add_match(
+        "مانشستر سيتي",
+        "بورنموث",
+        "2030-08-23T13:00:00 · الجولة 1 · الدوري الإنجليزي",
+    )
+
+    assert rs._english_to_arabic("AFC Bournemouth") == "بورنموث"
+    assert rs._find_match_id("مانشستر سيتي", "بورنموث", "2030-08-23") == match.id
+
+    fake_result = {
+        "date": "2030-08-23",
+        "home_ar": "مانشستر سيتي",
+        "away_ar": "بورنموث",
+        "home_score": 2,
+        "away_score": 1,
+        "league": "eng.1",
+    }
+
+    with patch.object(rs, "_iter_scoreboard_results", return_value=[fake_result]):
+        assert rs.restore_match_result_from_espn(match.id)
+
+    updated = db.get_match(match.id)
+    assert updated.home_score == 2
+    assert updated.away_score == 1
+
+
 def test_espn_result_import_scores_predictions():
     db, rs = _fresh_db()
     user = db.upsert_user(101, "fan1", "Fan One")

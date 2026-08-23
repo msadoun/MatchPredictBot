@@ -1379,7 +1379,7 @@ def sync_live_match_scores(*, full_scan: bool = False) -> dict[str, int]:
     if full_scan:
         espn = sync_match_results_from_espn()
     else:
-        espn = sync_match_results_from_espn(days_back=5, days_ahead=1)
+        espn = sync_match_results_from_espn(days_back=14, days_ahead=1)
     restored = restore_missing_override_results()
     recalculated = recalculate_all_prediction_points()
     from knockout_teams import sync_knockout_team_names
