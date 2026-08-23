@@ -29,7 +29,7 @@ def test_leaderboard_includes_users_with_unscored_predictions():
     assert entries[1].total_points == 0
 
 
-def test_group_leaderboard_includes_orphan_predictor_without_membership():
+def test_group_leaderboard_excludes_predictor_without_group_membership():
     db = _fresh_db()
     group_id = -1001234567890
     os.environ["ALKORAM3NA_GROUP_CHAT_ID"] = str(group_id)
@@ -43,12 +43,25 @@ def test_group_leaderboard_includes_orphan_predictor_without_membership():
     db.set_match_result(match.id, 2, 1)
 
     entries = db.get_leaderboard(group_chat_id=group_id)
+    assert entries == []
+
+
+def test_group_leaderboard_includes_registered_group_member():
+    db = _fresh_db()
+    group_id = -1001234567890
+    user = db.upsert_user(333, "player3", "Player Three")
+    db.register_group_member(group_id, user.id)
+    match = db.add_match("E", "F", "2030-08-24T12:00:00")
+    db.save_prediction(user.id, match.id, 2, 1)
+    db.set_match_result(match.id, 2, 1)
+
+    entries = db.get_leaderboard(group_chat_id=group_id)
     assert len(entries) == 1
     assert entries[0].display_name == "Player Three"
     assert entries[0].total_points == 3
 
 
-def test_group_leaderboard_includes_manual_base_without_group_membership():
+def test_group_leaderboard_includes_manual_base_only_for_group_members():
     db = _fresh_db()
     group_id = -1001234567890
     user = db.upsert_user(444, "player4", "Player Four")
@@ -58,8 +71,7 @@ def test_group_leaderboard_includes_manual_base_without_group_membership():
         conn.execute("DELETE FROM group_members WHERE user_id = ?", (user.id,))
 
     entries = db.get_leaderboard(group_chat_id=group_id)
-    assert len(entries) == 1
-    assert entries[0].total_points == 15
+    assert entries == []
 
 
 def test_leaderboard_defaults_to_configured_group_without_explicit_scope():
@@ -99,6 +111,43 @@ def test_group_leaderboard_includes_predictor_with_active_group_only():
     assert len(entries) == 1
     assert entries[0].display_name == "Player One"
     assert entries[0].total_points == 3
+
+
+def test_group_leaderboard_scoped_to_selected_group_only():
+    db = _fresh_db()
+    group_a = -1001111111111
+    group_b = -1002222222222
+    user_a = db.upsert_user(701, "alice", "Alice")
+    user_b = db.upsert_user(702, "bob", "Bob")
+    match = db.add_match("X", "Y", "2030-08-26T12:00:00")
+
+    db.register_group_member(group_a, user_a.id)
+    db.register_group_member(group_b, user_b.id)
+    db.save_prediction(user_a.id, match.id, 2, 0)
+    db.save_prediction(user_b.id, match.id, 0, 1)
+    db.set_match_result(match.id, 2, 0)
+
+    entries_a = db.get_leaderboard(group_chat_id=group_a)
+    entries_b = db.get_leaderboard(group_chat_id=group_b)
+
+    assert [entry.display_name for entry in entries_a] == ["Alice"]
+    assert [entry.display_name for entry in entries_b] == ["Bob"]
+
+
+def test_unregister_group_member_hides_group_from_user():
+    db = _fresh_db()
+    group_id = -1003333333333
+    user = db.upsert_user(801, "carol", "Carol")
+    db.register_group_member(group_id, user.id)
+    db.set_user_active_group(user.id, group_id)
+
+    assert db.get_user_group_chat_ids(user.id) == [group_id]
+    assert db.get_user_active_group(user.id) == group_id
+
+    db.unregister_group_member(group_id, user.id)
+
+    assert db.get_user_group_chat_ids(user.id) == []
+    assert db.get_user_active_group(user.id) is None
 
 
 def test_group_leaderboard_adds_prediction_points_to_manual_base():
