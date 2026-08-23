@@ -1,5 +1,6 @@
 import json
 import logging
+import unicodedata
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
@@ -37,19 +38,69 @@ TEAM_ALIASES: dict[str, str] = {
     # ESPN display names → canonical keys in teams_ar
     "Athletic Club": "Athletic Bilbao",
     "Tottenham Hotspur": "Tottenham",
+    "Tottenham Hotspur FC": "Tottenham",
     "Newcastle United": "Newcastle",
     "Brighton & Hove Albion": "Brighton",
     "Brighton and Hove Albion": "Brighton",
     "Wolverhampton Wanderers": "Wolves",
     "West Ham United": "West Ham",
     "Leeds United": "Leeds United",
+    "AFC Bournemouth": "Bournemouth",
+    "Atlético Madrid": "Atletico Madrid",
+    "Atlético de Madrid": "Atletico Madrid",
+    "Atletico de Madrid": "Atletico Madrid",
+    "Manchester United FC": "Manchester United",
+    "Manchester City FC": "Manchester City",
+    "Liverpool FC": "Liverpool",
+    "Arsenal FC": "Arsenal",
+    "Chelsea FC": "Chelsea",
+    "Crystal Palace FC": "Crystal Palace",
+    "Nottingham Forest FC": "Nottingham Forest",
+    "Ipswich Town FC": "Ipswich",
+    "Hull City AFC": "Hull",
+    "Coventry City FC": "Coventry",
+    "Sporting Clube de Portugal": "Sporting CP",
+    "Sporting Lisbon": "Sporting CP",
+    "Paris Saint-Germain FC": "Paris Saint-Germain",
+    "Inter": "Inter Milan",
+    "Internazionale": "Inter Milan",
+    "FC Bayern München": "Bayern Munich",
+    "Bayern München": "Bayern Munich",
+    "Borussia Dortmund BVB": "Borussia Dortmund",
+    "Real Madrid CF": "Real Madrid",
+    "FC Barcelona": "Barcelona",
 }
+
+
+def _strip_accents(text: str) -> str:
+    normalized = unicodedata.normalize("NFD", text)
+    return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+
+
+def _normalize_espn_team_name(name: str) -> str:
+    text = _strip_accents(name.strip())
+    for prefix in ("AFC ", "FC ", "CF ", "SC "):
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+            break
+    return text.strip()
+
+
+def _canonical_english_team(name: str) -> str:
+    candidates = [name, _normalize_espn_team_name(name)]
+    for candidate in candidates:
+        if candidate in TEAM_ALIASES:
+            return TEAM_ALIASES[candidate]
+    normalized = _normalize_espn_team_name(name)
+    if normalized in TEAM_ALIASES:
+        return TEAM_ALIASES[normalized]
+    return normalized
 
 
 def _english_to_arabic(name: str) -> str:
     from teams_ar import canonical_team_name
 
-    canonical = TEAM_ALIASES.get(name, name)
+    canonical = _canonical_english_team(name)
     if canonical in TEAM_EN_TO_AR:
         return canonical_team_name(TEAM_EN_TO_AR[canonical])
 
@@ -168,15 +219,16 @@ def _find_match_id(home_ar: str, away_ar: str, iso_date: str) -> int | None:
 
     with get_db() as conn:
         for date_prefix in {iso_date}:
-            row = conn.execute(
-                """
-                SELECT id FROM matches
-                WHERE home_team = ? AND away_team = ? AND kickoff_at LIKE ?
-                """,
-                (home_ar, away_ar, f"{date_prefix}%"),
-            ).fetchone()
-            if row:
-                return int(row["id"])
+            for home, away in ((home_ar, away_ar), (away_ar, home_ar)):
+                row = conn.execute(
+                    """
+                    SELECT id FROM matches
+                    WHERE home_team = ? AND away_team = ? AND kickoff_at LIKE ?
+                    """,
+                    (home, away, f"{date_prefix}%"),
+                ).fetchone()
+                if row:
+                    return int(row["id"])
 
         rows = conn.execute(
             """
@@ -225,6 +277,28 @@ def _date_keys_around(iso_date: str) -> list[str]:
     for offset in (-1, 0, 1):
         keys.append((day + timedelta(days=offset)).strftime("%Y%m%d"))
     return keys
+
+
+def _align_espn_result_to_fixture(match, result: dict) -> dict:
+    """Swap ESPN home/away scores when they are reversed vs the fixture row."""
+    from teams_ar import canonical_team_name
+
+    if not match:
+        return result
+
+    home_ar = canonical_team_name(result["home_ar"])
+    away_ar = canonical_team_name(result["away_ar"])
+    if match.home_team == home_ar and match.away_team == away_ar:
+        return result
+    if match.home_team == away_ar and match.away_team == home_ar:
+        return {
+            **result,
+            "home_ar": away_ar,
+            "away_ar": home_ar,
+            "home_score": result["away_score"],
+            "away_score": result["home_score"],
+        }
+    return result
 
 
 def _orient_espn_result_for_match(match, result: dict) -> tuple[str, str, int, int]:
@@ -293,8 +367,9 @@ def restore_match_result_from_espn(match_id: int) -> bool:
                     match.kickoff_at,
                 ):
                     continue
+            aligned = _align_espn_result_to_fixture(match, result)
             home_team, away_team, home_score, away_score = _orient_espn_result_for_match(
-                match, result
+                match, aligned
             )
             updated = set_match_result(
                 match_id,
@@ -401,14 +476,15 @@ def sync_match_results_from_espn(days_back: int = 60, days_ahead: int = 1) -> di
 
                 rescored += rescore_match_predictions(match_id)
                 continue
+            aligned = _align_espn_result_to_fixture(match, result)
             home_team, away_team, home_score, away_score = (
-                _orient_espn_result_for_match(match, result)
+                _orient_espn_result_for_match(match, aligned)
                 if match
                 else (
-                    result["home_ar"],
-                    result["away_ar"],
-                    result["home_score"],
-                    result["away_score"],
+                    aligned["home_ar"],
+                    aligned["away_ar"],
+                    aligned["home_score"],
+                    aligned["away_score"],
                 )
             )
             match = set_match_result(
