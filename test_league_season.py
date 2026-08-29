@@ -113,3 +113,23 @@ def test_gw1_opening_fixtures():
     assert next_local("تشيلسي") == ("فولهام", "تشيلسي")
     assert next_local("برشلونة") == ("إلتشي", "برشلونة")
     assert next_local("ريال مدريد") == ("إسبانيول", "ريال مدريد")
+
+
+def test_ucl_md1_official_2026_27_draw():
+    """League phase MD1 from UEFA draw (27 Aug 2026)."""
+    label = CHAMPIONS_LEAGUE_LABEL
+
+    def first_ucl(club: str) -> tuple[str, str]:
+        cl = sorted(
+            (f for f in fixtures_for_club(club) if label in f.group),
+            key=lambda f: f.kickoff_utc,
+        )
+        first = cl[0]
+        return first.home, first.away
+
+    assert first_ucl("ريال مدريد") == ("ريال مدريد", "إنتر ميلان")
+    assert first_ucl("مانشستر سيتي") == ("بورتو", "مانشستر سيتي")
+    assert first_ucl("برشلونة") == ("برشلونة", "فينوورد")
+    assert first_ucl("أرسنال") == ("نابولي", "أرسنال")
+    assert first_ucl("ليفربول") == ("ليفربول", "أتلتيكو مدريد")
+    assert first_ucl("مانشستر يونايتد") == ("مانشستر يونايتد", "صباح")
