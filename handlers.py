@@ -18,7 +18,15 @@ from group_standings import (
 from user_messaging import edit_or_send_user, is_group_chat, reply_to_user, send_chunked_user_text, SAFE_TEXT_CHUNK
 
 import prediction_reports as reports
-from user_broadcast import broadcast_message, send_user_message
+from user_broadcast import (
+    broadcast_image,
+    broadcast_message,
+    copy_caption_for_command,
+    image_source_message,
+    send_user_image,
+    send_user_message,
+    split_bot_command,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1971,10 +1979,11 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     text = " ".join(context.args[1:]).strip()
-    if not text and update.message and update.message.reply_to_message:
+    image = image_source_message(update.message)
+    if not text and update.message and update.message.reply_to_message and not image:
         replied = update.message.reply_to_message
         text = (replied.text or replied.caption or "").strip()
-    if not text:
+    if not text and not image:
         await reply_to_user(
             update, context, msg.BROADCAST_EMPTY, bot_username=BOT_USERNAME
         )
@@ -1987,7 +1996,20 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         msg.BROADCAST_STARTED.format(total=len(recipients)),
         bot_username=BOT_USERNAME,
     )
-    stats = await broadcast_message(context.bot, text, recipients)
+    if image and image.chat:
+        caption = copy_caption_for_command(
+            text,
+            image_is_command_message=image is update.message,
+        )
+        stats = await broadcast_image(
+            context.bot,
+            recipients,
+            from_chat_id=image.chat.id,
+            message_id=image.message_id,
+            caption=caption,
+        )
+    else:
+        stats = await broadcast_message(context.bot, text, recipients)
     await reply_to_user(
         update,
         context,
@@ -2004,7 +2026,13 @@ async def senduser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return
 
-    if len(context.args) < 2:
+    image = image_source_message(update.message)
+    if not context.args:
+        await reply_to_user(
+            update, context, msg.SENDUSER_USAGE, bot_username=BOT_USERNAME
+        )
+        return
+    if len(context.args) < 2 and not image:
         await reply_to_user(
             update, context, msg.SENDUSER_USAGE, bot_username=BOT_USERNAME
         )
@@ -2018,13 +2046,26 @@ async def senduser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     text = " ".join(context.args[1:]).strip()
-    if not text:
+    if not text and not image:
         await reply_to_user(
             update, context, msg.SENDUSER_USAGE, bot_username=BOT_USERNAME
         )
         return
 
-    result = await send_user_message(context.bot, participant.telegram_id, text)
+    if image and image.chat:
+        caption = copy_caption_for_command(
+            text,
+            image_is_command_message=image is update.message,
+        )
+        result = await send_user_image(
+            context.bot,
+            participant.telegram_id,
+            from_chat_id=image.chat.id,
+            message_id=image.message_id,
+            caption=caption,
+        )
+    else:
+        result = await send_user_message(context.bot, participant.telegram_id, text)
     if result == "sent":
         await reply_to_user(
             update,
@@ -2040,6 +2081,24 @@ async def senduser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await reply_to_user(
             update, context, msg.SENDUSER_FAILED, bot_username=BOT_USERNAME
         )
+
+
+async def admin_image_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /broadcast and /senduser when they are photo captions."""
+    user = update.effective_user
+    if not user or not is_admin(user.id) or not update.message:
+        return
+    parsed = split_bot_command(update.message.caption)
+    if not parsed:
+        return
+    command, args = parsed
+    context.args = args
+    if command == "broadcast":
+        await broadcast_command(update, context)
+    elif command == "senduser":
+        await senduser_command(update, context)
 
 
 async def sync_scores_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
