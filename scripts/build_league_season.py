@@ -92,7 +92,7 @@ FIXTURES: list[tuple[str, str, str, str, str]] = [
     # La Liga — Barcelona (RFEF / sport.es)
     m("BAR", O["ELC"], TEAMS["BAR"], kickoff("2026-08-23", "15:00:00"), 2, "laliga"),
     m("BAR", TEAMS["BAR"], O["ATH"], kickoff("2026-08-27", "19:00:00"), 1, "laliga"),
-    m("BAR", TEAMS["BAR"], O["RAY"], kickoff("2026-08-30", "19:00:00"), 3, "laliga"),
+    m("BAR", TEAMS["BAR"], O["RAY"], kickoff("2026-08-31", "19:30:00"), 3, "laliga"),
     m("BAR", O["VAL"], TEAMS["BAR"], kickoff("2026-09-06", "19:00:00"), 4, "laliga"),
     m("BAR", O["LEV"], TEAMS["BAR"], kickoff("2026-09-13", "19:00:00"), 5, "laliga"),
     # Premier League — gameweeks 1–5 (premierleague.com / Sports Mole)

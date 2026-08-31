@@ -1108,6 +1108,8 @@ def backfill_match_kickoff_times() -> int:
                     (new_kickoff, row["id"]),
                 )
                 updated += 1
+    if updated:
+        sync_match_open_flags()
     return updated
 
 

@@ -115,6 +115,19 @@ def test_gw1_opening_fixtures():
     assert next_local("ريال مدريد") == ("إسبانيول", "ريال مدريد")
 
 
+def test_barcelona_rayo_jornada_3_official_date():
+    """La Liga lists Barça vs Rayo on Mon 31 Aug 2026, 19:30 CEST."""
+    local = [
+        f
+        for f in fixtures_for_club("برشلونة")
+        if LOCAL_LA_LIGA_LABEL in f.group
+        and f.home == "برشلونة"
+        and f.away == "رايو فاليكانو"
+    ]
+    assert len(local) == 1
+    assert local[0].kickoff_utc == "2026-08-31T19:30:00"
+
+
 def test_ucl_md1_official_2026_27_draw():
     """League phase MD1 from UEFA draw (27 Aug 2026)."""
     label = CHAMPIONS_LEAGUE_LABEL
