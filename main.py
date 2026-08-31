@@ -25,6 +25,7 @@ from handlers import (
     admin_predictions_callback,
     admin_predictions_command,
     admin_help_command,
+    admin_image_command,
     backup_predictions_command,
     close_match_command,
     open_match_command,
@@ -364,6 +365,12 @@ def main() -> None:
     app.add_handler(CommandHandler("syncscores", sync_scores_command))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     app.add_handler(CommandHandler("senduser", senduser_command))
+    app.add_handler(
+        MessageHandler(
+            (filters.PHOTO | filters.Document.IMAGE) & filters.CAPTION,
+            admin_image_command,
+        )
+    )
     app.add_handler(CommandHandler("adminpredictions", admin_predictions_command))
     app.add_handler(CommandHandler("adminhelp", admin_help_command))
     app.add_handler(CommandHandler("matchtable", match_table_command))

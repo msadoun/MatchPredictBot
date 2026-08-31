@@ -176,11 +176,13 @@ BROADCAST_USAGE = (
     "📢 إرسال رسالة لجميع مستخدمي البوت ({count} مستخدم)\n\n"
     "الاستخدام:\n"
     "/broadcast confirm <الرسالة>\n\n"
-    "أو ردّ على رسالة تحتوي النص واكتب:\n"
+    "لإرسال صورة: أرسل الصورة مع تعليق\n"
+    "/broadcast confirm <نص اختياري>\n"
+    "أو ردّ على الصورة واكتب:\n"
     "/broadcast confirm\n\n"
     "تحذير: تُرسل الرسالة في المحادثة الخاصة مع كل مستخدم."
 )
-BROADCAST_EMPTY = "اكتب الرسالة بعد confirm أو ردّ على رسالة تحتوي النص."
+BROADCAST_EMPTY = "اكتب الرسالة بعد confirm، أو أرفق/ردّ على صورة."
 BROADCAST_STARTED = "⏳ جارٍ الإرسال إلى {total} مستخدم..."
 BROADCAST_DONE = (
     "✅ انتهى الإرسال.\n"
@@ -192,7 +194,10 @@ BROADCAST_DONE = (
 SENDUSER_USAGE = (
     "الاستخدام: /senduser <مستخدم> <الرسالة>\n"
     "مثال: /senduser @username مرحباً!\n"
-    "أو: /senduser 123456789 مرحباً"
+    "أو: /senduser 123456789 مرحباً\n\n"
+    "لإرسال صورة: أرسل الصورة مع تعليق\n"
+    "/senduser <مستخدم> <نص اختياري>\n"
+    "أو ردّ على الصورة: /senduser <مستخدم>"
 )
 SENDUSER_NOT_FOUND = "المستخدم غير موجود في قاعدة البوت."
 SENDUSER_SENT = "تم إرسال الرسالة إلى {name}."
@@ -262,8 +267,8 @@ ADMIN_COMMANDS_TEXT = (
     "• /backuppredictions — نسخ التوقعات\n"
     "• /restorepredictions — استرجاع توقعات\n\n"
     "📢 المراسلة\n"
-    "• /broadcast confirm <رسالة> — للجميع\n"
-    "• /senduser <مستخدم> <رسالة> — لمستخدم واحد\n\n"
+    "• /broadcast confirm <رسالة> — للجميع (نص أو صورة)\n"
+    "• /senduser <مستخدم> <رسالة> — لمستخدم واحد (نص أو صورة)\n\n"
     "🛠 صيانة\n"
     "• /cleargroups confirm — حذف المجموعات\n"
     "• /clearuserdata confirm — إعادة ضبط كاملة\n"
