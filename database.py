@@ -1043,14 +1043,15 @@ def is_league_season_loaded() -> bool:
 
 
 def list_next_open_match_per_league_club() -> list[Match]:
-    """Next predictable local-league match for each of the seven tracked clubs."""
-    from league_season import (
-        CHAMPIONS_LEAGUE_LABEL,
-        LEAGUE_TEAMS,
-        LOCAL_LA_LIGA_LABEL,
-        LOCAL_PL_LABEL,
-    )
+    """Next predictable match for each tracked club (league or UCL).
 
+    Picks the soonest open kickoff across domestic and Champions League.
+    When two tracked clubs play each other, the fixture is listed once.
+    """
+    from league_season import LEAGUE_TEAMS
+
+    # Insert any missing season fixtures (e.g. UCL after a domestic-only seed).
+    seed_league_season_matches()
     sync_match_open_flags()
     open_matches = list_matches(open_only=True, limit=None)
     by_club: dict[str, Match] = {}
@@ -1058,21 +1059,20 @@ def list_next_open_match_per_league_club() -> list[Match]:
         club_matches = [
             m for m in open_matches if club in (m.home_team, m.away_team)
         ]
-        local_matches = [
-            m
-            for m in club_matches
-            if LOCAL_LA_LIGA_LABEL in (m.kickoff_at or "")
-            or LOCAL_PL_LABEL in (m.kickoff_at or "")
-        ]
-        pool = local_matches or [
-            m
-            for m in club_matches
-            if CHAMPIONS_LEAGUE_LABEL in (m.kickoff_at or "")
-        ]
-        pool.sort(key=lambda m: (m.kickoff_at or "", m.id))
-        if pool:
-            by_club[club] = pool[0]
-    return [by_club[club] for club in LEAGUE_TEAMS if club in by_club]
+        club_matches.sort(key=lambda m: (m.kickoff_at or "", m.id))
+        if club_matches:
+            by_club[club] = club_matches[0]
+
+    # Preserve club order, but drop duplicate head-to-head fixtures.
+    seen_ids: set[int] = set()
+    ordered: list[Match] = []
+    for club in LEAGUE_TEAMS:
+        match = by_club.get(club)
+        if match is None or match.id in seen_ids:
+            continue
+        seen_ids.add(match.id)
+        ordered.append(match)
+    return ordered
 
 
 def backfill_match_kickoff_times() -> int:
