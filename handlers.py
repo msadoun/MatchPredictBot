@@ -1560,6 +1560,96 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 
+def _my_predictions_team_keyboard() -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for index, team in enumerate(reports.list_league_teams()):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    team,
+                    callback_data=f"mypred:team:{index}",
+                )
+            ]
+        )
+    rows.append(_main_menu_back_row())
+    return InlineKeyboardMarkup(rows)
+
+
+def _my_predictions_team_nav_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    msg.MY_PREDICTIONS_BTN_TEAMS,
+                    callback_data="mypred:menu",
+                )
+            ],
+            _main_menu_back_row(),
+        ]
+    )
+
+
+def _format_user_prediction_block(
+    prediction: db.Prediction,
+    match: db.Match,
+    *,
+    display_map: dict | None = None,
+) -> str:
+    from knockout_teams import resolve_match_display_teams
+
+    home, away = resolve_match_display_teams(match, display_map=display_map)
+    doubled = " ⭐" if prediction.is_doubled else ""
+    line = (
+        f"#{match.id} {home} {msg.VS} {away}{doubled}\n"
+        f"   {msg.YOUR_PICK}: {prediction.home_score}-{prediction.away_score}"
+    )
+    if prediction.is_doubled:
+        line += f"\n   {msg.DOUBLE_STATUS_ACTIVE}"
+    if match.home_score is not None and match.away_score is not None:
+        line += f"\n   {msg.ACTUAL}: {match.home_score}-{match.away_score}"
+        line += (
+            f"\n   {msg.POINTS_LABEL}: "
+            f"{prediction.points if prediction.points is not None else 0}"
+        )
+    else:
+        line += f"\n   {msg.POINTS_PENDING}"
+    return line
+
+
+def _predictions_for_team(
+    predictions: list[tuple[db.Prediction, db.Match]],
+    team: str,
+) -> list[tuple[db.Prediction, db.Match]]:
+    return [
+        (prediction, match)
+        for prediction, match in predictions
+        if team in (match.home_team, match.away_team)
+    ]
+
+
+def _render_team_predictions_text(
+    team: str,
+    predictions: list[tuple[db.Prediction, db.Match]],
+) -> str:
+    from knockout_teams import resolved_knockout_display_map
+
+    team_predictions = _predictions_for_team(predictions, team)
+    header = msg.MY_PREDICTIONS_TEAM_HEADER.format(team=team)
+    if not team_predictions:
+        return f"{header}\n\n{msg.MY_PREDICTIONS_TEAM_EMPTY.format(team=team)}"
+
+    matches = [match for _, match in team_predictions]
+    display_map = resolved_knockout_display_map(matches)
+    lines = [header, msg.SCORING_RULES]
+    for prediction, match in team_predictions:
+        lines.append(
+            _format_user_prediction_block(
+                prediction, match, display_map=display_map
+            )
+        )
+    return "\n\n".join(lines)
+
+
 async def my_predictions_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -1581,29 +1671,71 @@ async def my_predictions_command(
         await menu_screen_response(update, context, msg.NO_PREDICTIONS)
         return
 
-    from knockout_teams import resolve_match_display_teams, resolved_knockout_display_map
+    await menu_screen_response(
+        update,
+        context,
+        msg.MY_PREDICTIONS_PICK_TEAM,
+        reply_markup=_my_predictions_team_keyboard(),
+    )
 
-    matches = [match for _, match in predictions]
-    display_map = resolved_knockout_display_map(matches)
 
-    lines = [msg.YOUR_PREDICTIONS, msg.SCORING_RULES]
-    for prediction, match in predictions:
-        home, away = resolve_match_display_teams(match, display_map=display_map)
-        doubled = " ⭐" if prediction.is_doubled else ""
-        line = (
-            f"#{match.id} {home} {msg.VS} {away}{doubled}\n"
-            f"   {msg.YOUR_PICK}: {prediction.home_score}-{prediction.away_score}"
+async def my_predictions_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    user = update.effective_user
+    if not user:
+        return
+
+    participant = _ensure_participant(update)
+    if not participant:
+        await query.answer(msg.NOT_JOINED, show_alert=True)
+        return
+
+    await query.answer()
+    parts = query.data.split(":")
+    if len(parts) < 2 or parts[0] != "mypred":
+        return
+
+    action = parts[1]
+    db.refresh_finished_match_scores()
+    predictions = db.get_user_predictions(participant.id)
+
+    if action == "menu":
+        if not predictions:
+            await edit_or_send_user(
+                update,
+                context,
+                msg.NO_PREDICTIONS,
+                bot_username=BOT_USERNAME,
+            )
+            return
+        await edit_or_send_user(
+            update,
+            context,
+            msg.MY_PREDICTIONS_PICK_TEAM,
+            _my_predictions_team_keyboard(),
+            bot_username=BOT_USERNAME,
         )
-        if prediction.is_doubled:
-            line += f"\n   {msg.DOUBLE_STATUS_ACTIVE}"
-        if match.home_score is not None and match.away_score is not None:
-            line += f"\n   {msg.ACTUAL}: {match.home_score}-{match.away_score}"
-            line += f"\n   {msg.POINTS_LABEL}: {prediction.points if prediction.points is not None else 0}"
-        else:
-            line += f"\n   {msg.POINTS_PENDING}"
-        lines.append(line)
+        return
 
-    await menu_screen_response(update, context, "\n\n".join(lines))
+    if action == "team" and len(parts) >= 3:
+        team = _resolve_league_team(parts[2])
+        if not team:
+            return
+        text = _render_team_predictions_text(team, predictions)
+        await edit_or_send_user(
+            update,
+            context,
+            text,
+            _my_predictions_team_nav_keyboard(),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
 
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

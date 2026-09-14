@@ -149,6 +149,10 @@ PREDICTION_CANCELLED = "تم إلغاء التوقع."
 
 NOT_JOINED = "لم تسجّل بعد. استخدم /start أولاً."
 NO_PREDICTIONS = "لم تقم بأي توقعات بعد."
+MY_PREDICTIONS_PICK_TEAM = "📋 توقعاتك\n\nاختر فريقاً لعرض توقعات مبارياته:"
+MY_PREDICTIONS_TEAM_HEADER = "📋 توقعاتك — {team}"
+MY_PREDICTIONS_TEAM_EMPTY = "لا توجد توقعات لمباريات {team}."
+MY_PREDICTIONS_BTN_TEAMS = "↩️ رجوع للفرق"
 PREDICTION_SAVE_FAILED = (
     "تعذّر حفظ التوقع. تأكد أن البوت يعمل على قاعدة بيانات دائمة، ثم حاول مرة أخرى."
 )
