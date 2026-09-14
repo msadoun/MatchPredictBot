@@ -63,6 +63,12 @@ def test_reconcile_removes_arsenal_ucl_md1_napoli():
     remaining = db.list_matches(open_only=False, limit=None)
     pairs = {(m.home_team, m.away_team) for m in remaining}
     assert ("نابولي", "أرسنال") not in pairs
+    assert ("إبسويتش", "أرسنال") in pairs
     assert ("برايتون", "أرسنال") in pairs
     assert ("أرسنال", "ليل") in pairs
-    assert ("أرسنال", "ريال مدريد") in pairs
+    # Arsenal club window ends at Dortmund; Madrid MD6 remains only on Real Madrid's list.
+    from league_season import fixtures_for_club
+
+    ars = {(f.home, f.away) for f in fixtures_for_club("أرسنال")}
+    assert ("أرسنال", "ريال مدريد") not in ars
+    assert ("أرسنال", "بوروسيا دورتموند") in ars

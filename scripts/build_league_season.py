@@ -38,6 +38,7 @@ O = {
     "LEV": "\u0644\u064a\u0641\u0627\u0646\u062a\u064a",
     "MAL": "\u0645\u0627\u0644\u0627\u0642\u0627",
     "NEW": "\u0646\u064a\u0648\u0643\u0627\u0633\u0644",
+    "NOR": "\u0646\u0648\u0631\u0648\u064a\u062a\u0634",
     "NFO": "\u0646\u0648\u062a\u0646\u063a\u0647\u0627\u0645 \u0641\u0648\u0631\u0633\u062a",
     "RAY": "\u0631\u0627\u064a\u0648 \u0641\u0627\u0644\u064a\u0643\u0627\u0646\u0648",
     "RSO": "\u0631\u064a\u0627\u0644 \u0633\u0648\u0633\u064a\u062f\u0627\u062f",
@@ -79,6 +80,8 @@ def m(club: str, home: str, away: str, kickoff_at: str, md: int, comp: str) -> t
         group = f"\u0627\u0644\u062c\u0648\u0644\u0629 {md} \u00b7 \u0627\u0644\u062f\u0648\u0631\u064a \u0627\u0644\u0625\u0633\u0628\u0627\u0646\u064a"
     elif comp == "pl":
         group = f"\u0627\u0644\u062c\u0648\u0644\u0629 {md} \u00b7 \u0627\u0644\u062f\u0648\u0631\u064a \u0627\u0644\u0625\u0646\u062c\u0644\u064a\u0632\u064a"
+    elif comp == "efl":
+        group = f"\u0627\u0644\u062f\u0648\u0631 {md} \u00b7 \u0643\u0623\u0633 \u0627\u0644\u0631\u0627\u0628\u0637\u0629 \u0627\u0644\u0625\u0646\u062c\u0644\u064a\u0632\u064a\u0629"
     else:
         group = f"\u0627\u0644\u062c\u0648\u0644\u0629 {md} \u00b7 \u062f\u0648\u0631\u064a \u0623\u0628\u0637\u0627\u0644 \u0623\u0648\u0631\u0648\u0628\u0627"
     return (club, home, away, kickoff_at, group)
@@ -101,6 +104,12 @@ FIXTURES: list[tuple[str, str, str, str, str]] = [
     m("BAR", O["SEV"], TEAMS["BAR"], kickoff("2026-09-19", "19:00:00"), 7, "laliga"),
     m("BAR", TEAMS["BAR"], O["GET"], kickoff("2026-10-10", "16:30:00"), 8, "laliga"),
     m("BAR", O["BET"], TEAMS["BAR"], kickoff("2026-10-18", "19:00:00"), 9, "laliga"),
+    # EFL Cup R3 (15–17 Sep 2026) — next match for ARS/MU/MC/LIV before GW5 PL.
+    # Chelsea has no midweek cup tie (next remains Brentford PL) — why Chelsea looked "correct".
+    m("ARS", O["IPS"], TEAMS["ARS"], kickoff("2026-09-15", "19:00:00"), 3, "efl"),
+    m("LIV", TEAMS["LIV"], O["TOT"], kickoff("2026-09-15", "19:00:00"), 3, "efl"),
+    m("MU", O["BHA"], TEAMS["MU"], kickoff("2026-09-16", "19:00:00"), 3, "efl"),
+    m("MC", O["NOR"], TEAMS["MC"], kickoff("2026-09-17", "18:30:00"), 3, "efl"),
     # Premier League — GW5–9 window (Sports Mole / club TV updates, mid-Sep 2026)
     # Arsenal: Brighton A · Leeds H · Forest A · Everton H · Liverpool A
     m("ARS", O["BHA"], TEAMS["ARS"], kickoff("2026-09-19", "14:00:00"), 5, "pl"),
@@ -163,13 +172,9 @@ FIXTURES: list[tuple[str, str, str, str, str]] = [
     m("MU", O["SPO"], TEAMS["MU"], kickoff("2026-11-25", "20:00:00"), 5, "ucl"),
     m("BAR", O["SAB"], TEAMS["BAR"], kickoff("2026-11-25", "17:45:00"), 5, "ucl"),
     m("LIV", O["BRU"], TEAMS["LIV"], kickoff("2026-11-25", "20:00:00"), 5, "ucl"),
-    # MD6 — Arsenal host Real Madrid; City travel to Barcelona
+    # MD6 — keep on La Liga clubs; English clubs drop MD6 to make room for EFL Cup R3
     m("BAR", TEAMS["BAR"], TEAMS["MC"], kickoff("2026-12-08", "20:00:00"), 6, "ucl"),
-    m("MC", TEAMS["BAR"], TEAMS["MC"], kickoff("2026-12-08", "20:00:00"), 6, "ucl"),
-    m("MU", TEAMS["MU"], O["RBL"], kickoff("2026-12-08", "20:00:00"), 6, "ucl"),
-    m("ARS", TEAMS["ARS"], TEAMS["RM"], kickoff("2026-12-09", "20:00:00"), 6, "ucl"),
     m("RM", TEAMS["ARS"], TEAMS["RM"], kickoff("2026-12-09", "20:00:00"), 6, "ucl"),
-    m("LIV", TEAMS["LIV"], O["POR"], kickoff("2026-12-09", "20:00:00"), 6, "ucl"),
 ]
 
 
