@@ -2123,25 +2123,12 @@ async def sync_scores_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 def _admin_predictions_menu_keyboard() -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    for index, team in enumerate(reports.list_league_teams()):
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    team,
-                    callback_data=f"adminpred:scope:team:{index}",
-                )
-            ]
-        )
-    rows.extend(
+    return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton(msg.BTN_ADMIN_MATCH_TABLE, callback_data="adminpred:photopick")],
-            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_SAVED, callback_data="adminpred:saved")],
             [InlineKeyboardButton(msg.BTN_ADMIN_COMMANDS, callback_data="adminpred:commands")],
-            [InlineKeyboardButton(msg.BTN_BACK_MENU, callback_data="menu:main")],
         ]
     )
-    return InlineKeyboardMarkup(rows)
 
 
 def _admin_commands_keyboard() -> InlineKeyboardMarkup:

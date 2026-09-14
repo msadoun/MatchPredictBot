@@ -236,7 +236,7 @@ SYNCSCORES_DONE = (
 BTN_ADMIN_PREDICTIONS = "⚙️ لوحة المسؤول"
 ADMIN_PREDICTIONS_MENU = (
     "⚙️ لوحة المسؤول\n\n"
-    "اختر فريقاً لعرض توقعات مبارياته، أو جدولاً/تقريراً محفوظاً:"
+    "اختر جدولاً أو قائمة الأوامر:"
 )
 BTN_ADMIN_COMMANDS = "📖 أوامر المسؤول"
 ADMIN_COMMANDS_TEXT = (
