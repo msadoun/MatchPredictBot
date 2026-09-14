@@ -113,6 +113,8 @@ TEAM_EN_TO_AR: dict[str, str] = {
     "Osasuna": "أوساسونا",
     "PSV": "بي إس في",
     "PSV Eindhoven": "بي إس في",
+    "Racing Santander": "راسينغ سانتاندر",
+    "Racing de Santander": "راسينغ سانتاندر",
     "Rayo Vallecano": "رايو فاليكانو",
     "Real Oviedo": "ريال أوفييدo",
     "Shakhtar Donetsk": "شاختار دونيتسك",
