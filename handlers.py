@@ -1575,9 +1575,113 @@ def _my_predictions_team_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def _my_predictions_team_nav_keyboard() -> InlineKeyboardMarkup:
+_ARABIC_MONTHS = (
+    "",
+    "يناير",
+    "فبراير",
+    "مارس",
+    "أبريل",
+    "مايو",
+    "يونيو",
+    "يوليو",
+    "أغسطس",
+    "سبتمبر",
+    "أكتوبر",
+    "نوفمبر",
+    "ديسمبر",
+)
+
+
+def _match_year_month(kickoff_at: str | None) -> str | None:
+    if not kickoff_at:
+        return None
+    text = kickoff_at.strip()
+    if len(text) >= 7 and text[4] == "-" and text[:4].isdigit() and text[5:7].isdigit():
+        return text[:7]
+    return None
+
+
+def _format_year_month_label(year_month: str) -> str:
+    try:
+        year_s, month_s = year_month.split("-", 1)
+        month = int(month_s)
+    except ValueError:
+        return year_month
+    if not (1 <= month <= 12):
+        return year_month
+    return f"{_ARABIC_MONTHS[month]} {year_s}"
+
+
+def _predictions_for_team(
+    predictions: list[tuple[db.Prediction, db.Match]],
+    team: str,
+) -> list[tuple[db.Prediction, db.Match]]:
+    return [
+        (prediction, match)
+        for prediction, match in predictions
+        if team in (match.home_team, match.away_team)
+    ]
+
+
+def _months_for_team_predictions(
+    predictions: list[tuple[db.Prediction, db.Match]],
+    team: str,
+) -> list[str]:
+    months: set[str] = set()
+    for _, match in _predictions_for_team(predictions, team):
+        year_month = _match_year_month(match.kickoff_at)
+        if year_month:
+            months.add(year_month)
+    return sorted(months)
+
+
+def _predictions_for_team_month(
+    predictions: list[tuple[db.Prediction, db.Match]],
+    team: str,
+    year_month: str,
+) -> list[tuple[db.Prediction, db.Match]]:
+    return [
+        (prediction, match)
+        for prediction, match in _predictions_for_team(predictions, team)
+        if _match_year_month(match.kickoff_at) == year_month
+    ]
+
+
+def _my_predictions_month_keyboard(
+    team_index: int,
+    months: list[str],
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for year_month in months:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    _format_year_month_label(year_month),
+                    callback_data=f"mypred:month:{team_index}:{year_month}",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                msg.MY_PREDICTIONS_BTN_TEAMS,
+                callback_data="mypred:menu",
+            )
+        ]
+    )
+    rows.append(_main_menu_back_row())
+    return InlineKeyboardMarkup(rows)
+
+
+def _my_predictions_month_nav_keyboard(team_index: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
+            [
+                InlineKeyboardButton(
+                    msg.MY_PREDICTIONS_BTN_MONTHS,
+                    callback_data=f"mypred:team:{team_index}",
+                )
+            ],
             [
                 InlineKeyboardButton(
                     msg.MY_PREDICTIONS_BTN_TEAMS,
@@ -1616,38 +1720,79 @@ def _format_user_prediction_block(
     return line
 
 
-def _predictions_for_team(
-    predictions: list[tuple[db.Prediction, db.Match]],
+def _render_team_month_predictions_text(
     team: str,
-) -> list[tuple[db.Prediction, db.Match]]:
-    return [
-        (prediction, match)
-        for prediction, match in predictions
-        if team in (match.home_team, match.away_team)
-    ]
-
-
-def _render_team_predictions_text(
-    team: str,
+    year_month: str,
     predictions: list[tuple[db.Prediction, db.Match]],
 ) -> str:
     from knockout_teams import resolved_knockout_display_map
 
-    team_predictions = _predictions_for_team(predictions, team)
-    header = msg.MY_PREDICTIONS_TEAM_HEADER.format(team=team)
-    if not team_predictions:
-        return f"{header}\n\n{msg.MY_PREDICTIONS_TEAM_EMPTY.format(team=team)}"
+    month_label = _format_year_month_label(year_month)
+    header = msg.MY_PREDICTIONS_MONTH_HEADER.format(team=team, month=month_label)
+    month_predictions = _predictions_for_team_month(predictions, team, year_month)
+    if not month_predictions:
+        return (
+            f"{header}\n\n"
+            f"{msg.MY_PREDICTIONS_MONTH_EMPTY.format(team=team, month=month_label)}"
+        )
 
-    matches = [match for _, match in team_predictions]
+    matches = [match for _, match in month_predictions]
     display_map = resolved_knockout_display_map(matches)
     lines = [header, msg.SCORING_RULES]
-    for prediction, match in team_predictions:
+    for prediction, match in month_predictions:
         lines.append(
             _format_user_prediction_block(
                 prediction, match, display_map=display_map
             )
         )
     return "\n\n".join(lines)
+
+
+async def _show_my_predictions_months(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    team: str,
+    team_index: int,
+    predictions: list[tuple[db.Prediction, db.Match]],
+    edit: bool,
+) -> None:
+    months = _months_for_team_predictions(predictions, team)
+    if not months:
+        text = (
+            f"{msg.MY_PREDICTIONS_TEAM_HEADER.format(team=team)}\n\n"
+            f"{msg.MY_PREDICTIONS_TEAM_EMPTY.format(team=team)}"
+        )
+        markup = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        msg.MY_PREDICTIONS_BTN_TEAMS,
+                        callback_data="mypred:menu",
+                    )
+                ],
+                _main_menu_back_row(),
+            ]
+        )
+    else:
+        text = msg.MY_PREDICTIONS_PICK_MONTH.format(team=team)
+        markup = _my_predictions_month_keyboard(team_index, months)
+
+    if edit:
+        await edit_or_send_user(
+            update,
+            context,
+            text,
+            markup,
+            bot_username=BOT_USERNAME,
+        )
+    else:
+        await menu_screen_response(
+            update,
+            context,
+            text,
+            reply_markup=markup,
+        )
 
 
 async def my_predictions_command(
@@ -1723,15 +1868,38 @@ async def my_predictions_callback(
         return
 
     if action == "team" and len(parts) >= 3:
+        try:
+            team_index = int(parts[2])
+        except ValueError:
+            return
         team = _resolve_league_team(parts[2])
         if not team:
             return
-        text = _render_team_predictions_text(team, predictions)
+        await _show_my_predictions_months(
+            update,
+            context,
+            team=team,
+            team_index=team_index,
+            predictions=predictions,
+            edit=True,
+        )
+        return
+
+    if action == "month" and len(parts) >= 4:
+        try:
+            team_index = int(parts[2])
+        except ValueError:
+            return
+        team = _resolve_league_team(parts[2])
+        year_month = parts[3]
+        if not team or _match_year_month(f"{year_month}-01") != year_month:
+            return
+        text = _render_team_month_predictions_text(team, year_month, predictions)
         await edit_or_send_user(
             update,
             context,
             text,
-            _my_predictions_team_nav_keyboard(),
+            _my_predictions_month_nav_keyboard(team_index),
             bot_username=BOT_USERNAME,
         )
         return
