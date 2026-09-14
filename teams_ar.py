@@ -106,6 +106,8 @@ TEAM_EN_TO_AR: dict[str, str] = {
     "Hull": "هال",
     "Ipswich Town": "إبسويتش",
     "Ipswich": "إبسويتش",
+    "Norwich City": "نورويتش",
+    "Norwich": "نورويتش",
     "Lille": "ليل",
     "Málaga": "مالاقا",
     "Malaga": "مالاقا",
@@ -242,6 +244,7 @@ ARABIC_TEAM_ALIASES: dict[str, str] = {
     "كوفنتري": "كونتري",
     "سندرلاند": "ساندرلاند",
     "سلافيا براج": "سلافيا براغ",
+    "آرسنال": "أرسنال",
 }
 
 
