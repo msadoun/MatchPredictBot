@@ -2125,18 +2125,8 @@ async def sync_scores_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 def _admin_predictions_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BY_DAY, callback_data="adminpred:pick:day")],
-            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BY_STAGE, callback_data="adminpred:pick:stage")],
-            [
-                InlineKeyboardButton(
-                    msg.ADMIN_PREDICTIONS_GROUP_STAGE,
-                    callback_data="adminpred:scope:group_stage:all",
-                )
-            ],
             [InlineKeyboardButton(msg.BTN_ADMIN_MATCH_TABLE, callback_data="adminpred:photopick")],
-            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_SAVED, callback_data="adminpred:saved")],
             [InlineKeyboardButton(msg.BTN_ADMIN_COMMANDS, callback_data="adminpred:commands")],
-            [InlineKeyboardButton(msg.BTN_BACK_MENU, callback_data="menu:main")],
         ]
     )
 
@@ -2167,14 +2157,14 @@ def _admin_scope_action_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _admin_day_picker_keyboard() -> InlineKeyboardMarkup:
+def _admin_team_picker_keyboard(*, callback_prefix: str) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
-    for day in reports.list_available_days():
+    for index, team in enumerate(reports.list_league_teams()):
         rows.append(
             [
                 InlineKeyboardButton(
-                    day,
-                    callback_data=f"adminpred:scope:day:{day}",
+                    team,
+                    callback_data=f"{callback_prefix}:{index}",
                 )
             ]
         )
@@ -2184,23 +2174,15 @@ def _admin_day_picker_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def _admin_stage_picker_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
-    stages = reports.list_available_stages()
-    context.user_data["adminpred_stages"] = stages
-    rows: list[list[InlineKeyboardButton]] = []
-    for index, stage in enumerate(stages):
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    stage,
-                    callback_data=f"adminpred:scope:stage:{index}",
-                )
-            ]
-        )
-    rows.append(
-        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")]
-    )
-    return InlineKeyboardMarkup(rows)
+def _resolve_league_team(index_text: str) -> str | None:
+    teams = reports.list_league_teams()
+    try:
+        index = int(index_text)
+    except ValueError:
+        return None
+    if 0 <= index < len(teams):
+        return teams[index]
+    return None
 
 
 def _store_admin_scope(
@@ -2244,23 +2226,8 @@ async def _send_admin_report_document(
     return True
 
 
-def _admin_match_photo_stage_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
-    stages = reports.list_available_stages()
-    context.user_data["adminphoto_stages"] = stages
-    rows: list[list[InlineKeyboardButton]] = []
-    for index, stage in enumerate(stages):
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    stage,
-                    callback_data=f"adminpred:photostage:{index}",
-                )
-            ]
-        )
-    rows.append(
-        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")]
-    )
-    return InlineKeyboardMarkup(rows)
+def _admin_match_photo_team_keyboard() -> InlineKeyboardMarkup:
+    return _admin_team_picker_keyboard(callback_prefix="adminpred:phototeam")
 
 
 def _admin_match_photo_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
@@ -2287,19 +2254,19 @@ def _admin_match_photo_picker_keyboard(matches: list[db.Match]) -> InlineKeyboar
     return InlineKeyboardMarkup(rows)
 
 
-async def _show_match_table_stage_picker(
+async def _show_match_table_team_picker(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
     edit: bool = False,
 ) -> None:
-    stages = reports.list_available_stages()
-    if not stages:
+    teams = reports.list_league_teams()
+    if not teams:
         text = msg.ADMIN_MATCH_TABLE_EMPTY
         markup = _admin_predictions_menu_keyboard()
     else:
-        text = msg.ADMIN_MATCH_TABLE_PICK_STAGE
-        markup = _admin_match_photo_stage_keyboard(context)
+        text = msg.ADMIN_MATCH_TABLE_PICK_TEAM
+        markup = _admin_match_photo_team_keyboard()
 
     if edit:
         await edit_or_send_user(
@@ -2322,24 +2289,24 @@ async def _show_match_table_stage_picker(
 async def _show_match_table_match_picker(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    stage_key: str,
+    team_key: str,
 ) -> None:
-    matches = reports.matches_for_scope("stage", stage_key)
+    matches = reports.matches_for_scope("team", team_key)
     if not matches:
         await edit_or_send_user(
             update,
             context,
-            msg.ADMIN_MATCH_TABLE_EMPTY_STAGE.format(stage=stage_key),
-            reply_markup=_admin_match_photo_stage_keyboard(context),
+            msg.ADMIN_MATCH_TABLE_EMPTY_STAGE.format(stage=team_key),
+            reply_markup=_admin_match_photo_team_keyboard(),
             bot_username=BOT_USERNAME,
         )
         return
 
-    context.user_data["adminphoto_stage"] = stage_key
+    context.user_data["adminphoto_team"] = team_key
     await edit_or_send_user(
         update,
         context,
-        msg.ADMIN_MATCH_TABLE_PICK_MATCH.format(stage=stage_key),
+        msg.ADMIN_MATCH_TABLE_PICK_MATCH.format(stage=team_key),
         reply_markup=_admin_match_photo_picker_keyboard(matches),
         bot_username=BOT_USERNAME,
     )
@@ -2372,7 +2339,7 @@ async def match_table_command(
         return
 
     if not context.args:
-        await _show_match_table_stage_picker(update, context)
+        await _show_match_table_team_picker(update, context)
         return
 
     try:
@@ -2483,39 +2450,15 @@ async def admin_predictions_callback(
         )
         return
 
-    if action == "pick" and len(parts) >= 3:
-        pick_type = parts[2]
-        if pick_type == "day":
-            await edit_or_send_user(
-                update,
-                context,
-                msg.ADMIN_PREDICTIONS_PICK_DAY,
-                reply_markup=_admin_day_picker_keyboard(),
-                bot_username=BOT_USERNAME,
-            )
-        elif pick_type == "stage":
-            await edit_or_send_user(
-                update,
-                context,
-                msg.ADMIN_PREDICTIONS_PICK_STAGE,
-                reply_markup=_admin_stage_picker_keyboard(context),
-                bot_username=BOT_USERNAME,
-            )
-        return
-
     if action == "photopick":
-        await _show_match_table_stage_picker(update, context, edit=True)
+        await _show_match_table_team_picker(update, context, edit=True)
         return
 
-    if action == "photostage" and len(parts) >= 3:
-        stages = context.user_data.get("adminphoto_stages") or reports.list_available_stages()
-        try:
-            index = int(parts[2])
-        except ValueError:
+    if action == "phototeam" and len(parts) >= 3:
+        team = _resolve_league_team(parts[2])
+        if not team:
             return
-        if not (0 <= index < len(stages)):
-            return
-        await _show_match_table_match_picker(update, context, stages[index])
+        await _show_match_table_match_picker(update, context, team)
         return
 
     if action == "photo" and len(parts) >= 3:
@@ -2533,11 +2476,11 @@ async def admin_predictions_callback(
     if action == "scope" and len(parts) >= 4:
         scope_type = parts[2]
         scope_key = parts[3]
-        if scope_type == "stage" and scope_key.isdigit():
-            stages = context.user_data.get("adminpred_stages") or reports.list_available_stages()
-            index = int(scope_key)
-            if 0 <= index < len(stages):
-                scope_key = stages[index]
+        if scope_type == "team":
+            team = _resolve_league_team(scope_key)
+            if not team:
+                return
+            scope_key = team
         _store_admin_scope(context, scope_type, scope_key)
         report = reports.build_prediction_report(scope_type, scope_key)
         summary = reports.report_summary_text(report, max_users=8)
