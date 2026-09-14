@@ -1173,11 +1173,129 @@ def seed_world_cup_matches() -> dict[str, int]:
 def seed_league_season_matches() -> dict[str, int]:
     from league_season import LEAGUE_SEASON_FIXTURES, league_kickoff_datetime, league_kickoff_label
 
-    return _seed_fixtures(
-        LEAGUE_SEASON_FIXTURES,
-        label_for=league_kickoff_label,
-        kickoff_for=league_kickoff_datetime,
-    )
+    now = datetime.utcnow()
+    added = 0
+    updated = 0
+    skipped = 0
+    closed = 0
+
+    with get_db() as conn:
+        for fixture in LEAGUE_SEASON_FIXTURES:
+            kickoff_at = league_kickoff_label(fixture)
+            rows = conn.execute(
+                """
+                SELECT id, kickoff_at FROM matches
+                WHERE home_team = ? AND away_team = ?
+                ORDER BY id
+                """,
+                (fixture.home, fixture.away),
+            ).fetchall()
+            if rows:
+                primary = rows[0]
+                if primary["kickoff_at"] != kickoff_at:
+                    is_open = league_kickoff_datetime(kickoff_at) > now
+                    conn.execute(
+                        """
+                        UPDATE matches
+                        SET kickoff_at = ?, is_open = ?
+                        WHERE id = ?
+                        """,
+                        (kickoff_at, int(is_open), primary["id"]),
+                    )
+                    updated += 1
+                else:
+                    skipped += 1
+                # Drop duplicate rows for the same fixture pair.
+                for dup in rows[1:]:
+                    pred_count = conn.execute(
+                        "SELECT COUNT(*) FROM predictions WHERE match_id = ?",
+                        (dup["id"],),
+                    ).fetchone()[0]
+                    if pred_count:
+                        conn.execute(
+                            "UPDATE matches SET is_open = 0 WHERE id = ?",
+                            (dup["id"],),
+                        )
+                        closed += 1
+                    else:
+                        conn.execute(
+                            "DELETE FROM prediction_drafts WHERE match_id = ?",
+                            (dup["id"],),
+                        )
+                        conn.execute("DELETE FROM matches WHERE id = ?", (dup["id"],))
+                continue
+
+            is_open = league_kickoff_datetime(kickoff_at) > now
+            if not is_open:
+                closed += 1
+            conn.execute(
+                """
+                INSERT INTO matches (home_team, away_team, kickoff_at, is_open, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    fixture.home,
+                    fixture.away,
+                    kickoff_at,
+                    int(is_open),
+                    now.isoformat(),
+                ),
+            )
+            added += 1
+
+    removed = reconcile_league_season_matches()
+    sync_match_open_flags()
+    return {
+        "added": added,
+        "updated": updated,
+        "skipped": skipped,
+        "closed": closed,
+        "removed": removed,
+    }
+
+
+def reconcile_league_season_matches() -> int:
+    """Remove stale league-club fixtures that are no longer in the calendar.
+
+    Keeps rows that still have predictions (closes them instead of deleting).
+    """
+    from league_season import LEAGUE_SEASON_FIXTURES, LEAGUE_TEAMS
+
+    allowed = {(f.home, f.away) for f in LEAGUE_SEASON_FIXTURES}
+    league_teams = set(LEAGUE_TEAMS)
+    removed = 0
+    closed = 0
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, home_team, away_team FROM matches"
+        ).fetchall()
+        for row in rows:
+            home = row["home_team"]
+            away = row["away_team"]
+            if home not in league_teams and away not in league_teams:
+                continue
+            if (home, away) in allowed:
+                continue
+            pred_count = conn.execute(
+                "SELECT COUNT(*) FROM predictions WHERE match_id = ?",
+                (row["id"],),
+            ).fetchone()[0]
+            if pred_count:
+                conn.execute(
+                    "UPDATE matches SET is_open = 0 WHERE id = ?",
+                    (row["id"],),
+                )
+                closed += 1
+                continue
+            conn.execute(
+                "DELETE FROM prediction_drafts WHERE match_id = ?",
+                (row["id"],),
+            )
+            conn.execute("DELETE FROM matches WHERE id = ?", (row["id"],))
+            removed += 1
+    if closed:
+        sync_match_open_flags()
+    return removed
 
 
 def ensure_season_seeded() -> dict[str, int]:

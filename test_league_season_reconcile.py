@@ -1,0 +1,51 @@
+"""League season seed upserts kickoffs and drops stale English fixtures."""
+
+import importlib
+import os
+import tempfile
+
+
+def _fresh():
+    path = tempfile.mktemp(suffix=".db")
+    os.environ["DATABASE_PATH"] = path
+    import config
+    import database as db
+
+    importlib.reload(config)
+    importlib.reload(db)
+    db.init_db()
+    return db
+
+
+def test_seed_updates_moved_city_sunderland_kickoff():
+    db = _fresh()
+    stale = db.add_match(
+        "مانشستر سيتي",
+        "ساندرلاند",
+        "2026-09-19T14:00:00 · الجولة 5 · الدوري الإنجليزي",
+    )
+    result = db.seed_league_season_matches()
+    assert result["updated"] >= 1
+    match = db.get_match(stale.id)
+    assert match is not None
+    assert match.kickoff_at.startswith("2026-09-20T13:00:00")
+
+
+def test_reconcile_removes_stale_english_openers():
+    db = _fresh()
+    db.add_match(
+        "أرسنال",
+        "كونتري",
+        "2026-08-21T19:00:00 · الجولة 1 · الدوري الإنجليزي",
+    )
+    db.add_match(
+        "هال",
+        "مانشستر يونايتد",
+        "2026-08-22T11:30:00 · الجولة 1 · الدوري الإنجليزي",
+    )
+    result = db.seed_league_season_matches()
+    assert result["removed"] >= 2
+    remaining = db.list_matches(open_only=False, limit=None)
+    pairs = {(m.home_team, m.away_team) for m in remaining}
+    assert ("أرسنال", "كونتري") not in pairs
+    assert ("هال", "مانشستر يونايتد") not in pairs
