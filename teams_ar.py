@@ -120,6 +120,8 @@ TEAM_EN_TO_AR: dict[str, str] = {
     "Sunderland": "ساندرلاند",
     "Everton": "إيفرتون",
     "Fulham": "فولهام",
+    "Getafe": "خيتافي",
+    "Getafe CF": "خيتافي",
     "Girona": "جيرونا",
     "Inter Milan": "إنتر ميلان",
     "Juventus": "يوفنتوس",

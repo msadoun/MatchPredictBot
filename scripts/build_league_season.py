@@ -67,6 +67,9 @@ O = {
     "SPO": "\u0633\u0628\u0648\u0631\u062a\u0646\u063a \u0644\u0634\u0628\u0648\u0646\u0629",
     "SLA": "\u0633\u0644\u0627\u0641\u064a\u0627 \u0628\u0631\u0627\u062c",
     "VIL": "\u0641\u064a\u0627\u0631\u064a\u0627\u0644",
+    "GET": "\u062e\u064a\u062a\u0627\u0641\u064a",
+    "RAC": "\u0631\u0627\u0633\u064a\u0646\u063a \u0633\u0627\u0646\u062a\u0627\u0646\u062f\u0631",
+    "SEV": "\u0625\u0634\u0628\u064a\u0644\u064a\u0629",
 }
 
 
@@ -83,18 +86,20 @@ def m(club: str, home: str, away: str, kickoff_at: str, md: int, comp: str) -> t
 # (club_code, home, away, kickoff_utc, group) — 2026/27 official domestic + UCL calendars.
 # UCL: UEFA league-phase draw 27 Aug 2026 (AS/Sky); kickoffs 19:00 / 16:45 UTC.
 FIXTURES: list[tuple[str, str, str, str, str]] = [
-    # La Liga — Real Madrid (RFEF / realmadrid.com)
-    m("RM", O["ESP"], TEAMS["RM"], kickoff("2026-08-22", "19:30:00"), 2, "laliga"),
-    m("RM", TEAMS["RM"], O["RSO"], kickoff("2026-08-26", "19:00:00"), 1, "laliga"),
-    m("RM", TEAMS["RM"], O["MAL"], kickoff("2026-08-30", "15:00:00"), 3, "laliga"),
-    m("RM", O["BET"], TEAMS["RM"], kickoff("2026-09-04", "19:00:00"), 4, "laliga"),
-    m("RM", TEAMS["RM"], O["RAY"], kickoff("2026-09-13", "19:00:00"), 5, "laliga"),
-    # La Liga — Barcelona (RFEF / sport.es)
-    m("BAR", O["ELC"], TEAMS["BAR"], kickoff("2026-08-23", "15:00:00"), 2, "laliga"),
-    m("BAR", TEAMS["BAR"], O["ATH"], kickoff("2026-08-27", "19:00:00"), 1, "laliga"),
-    m("BAR", TEAMS["BAR"], O["RAY"], kickoff("2026-08-31", "19:30:00"), 3, "laliga"),
-    m("BAR", O["VAL"], TEAMS["BAR"], kickoff("2026-09-06", "19:00:00"), 4, "laliga"),
-    m("BAR", O["LEV"], TEAMS["BAR"], kickoff("2026-09-13", "19:00:00"), 5, "laliga"),
+    # La Liga — Real Madrid (realmadrid.com / LaLiga MD5–9 window)
+    # MD5 Rayo Sat 12 Sep 21:00 CEST; MD6 Elche Tue 15 Sep 21:30; MD7 Atlético Sun 20 Sep 16:15
+    m("RM", TEAMS["RM"], O["RAY"], kickoff("2026-09-12", "19:00:00"), 5, "laliga"),
+    m("RM", O["ELC"], TEAMS["RM"], kickoff("2026-09-15", "19:30:00"), 6, "laliga"),
+    m("RM", O["ATM"], TEAMS["RM"], kickoff("2026-09-20", "14:15:00"), 7, "laliga"),
+    m("RM", TEAMS["RM"], O["VIL"], kickoff("2026-10-10", "19:00:00"), 8, "laliga"),  # Sat 10 Oct 21:00 CEST
+    m("RM", TEAMS["RM"], O["SEV"], kickoff("2026-10-18", "19:00:00"), 9, "laliga"),
+    # La Liga — Barcelona (fcbarcelona.com MD5–9 window)
+    # MD5 Levante Sun 13 Sep 16:15; MD6 Racing Wed 16 Sep 21:30; MD7 Sevilla Sat 19 Sep 21:00
+    m("BAR", O["LEV"], TEAMS["BAR"], kickoff("2026-09-13", "14:15:00"), 5, "laliga"),
+    m("BAR", TEAMS["BAR"], O["RAC"], kickoff("2026-09-16", "19:30:00"), 6, "laliga"),
+    m("BAR", O["SEV"], TEAMS["BAR"], kickoff("2026-09-19", "19:00:00"), 7, "laliga"),
+    m("BAR", TEAMS["BAR"], O["GET"], kickoff("2026-10-10", "16:30:00"), 8, "laliga"),
+    m("BAR", O["BET"], TEAMS["BAR"], kickoff("2026-10-18", "19:00:00"), 9, "laliga"),
     # Premier League — gameweeks 1–5 (premierleague.com / Sports Mole)
     m("ARS", TEAMS["ARS"], O["COV"], kickoff("2026-08-21", "19:00:00"), 1, "pl"),
     m("MU", O["HUL"], TEAMS["MU"], kickoff("2026-08-22", "11:30:00"), 1, "pl"),
