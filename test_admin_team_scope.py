@@ -79,7 +79,7 @@ def test_matches_for_scope_team_arsenal_excludes_napoli_md1():
     arsenal = reports.matches_for_scope("team", "أرسنال")
     pairs = {(m.home_team, m.away_team) for m in arsenal}
     assert ("برايتون", "أرسنال") in pairs
-    assert ("إبسويتش", "أرسنال") in pairs
     assert ("أرسنال", "ليل") in pairs
+    assert ("أرسنال", "ريال مدريد") in pairs
     assert ("نابولي", "أرسنال") not in pairs
     assert napoli.id not in {m.id for m in arsenal}

@@ -26,7 +26,6 @@ def test_seven_clubs_feature_in_every_fixture():
 
 
 def test_ten_matches_per_club():
-    efl = "كأس الرابطة الإنجليزية"
     for club in LEAGUE_TEAMS:
         club_fixtures = fixtures_for_club(club)
         assert len(club_fixtures) == MATCHES_PER_CLUB
@@ -36,29 +35,19 @@ def test_ten_matches_per_club():
             if LOCAL_LA_LIGA_LABEL in f.group or LOCAL_PL_LABEL in f.group
         ]
         cl = [f for f in club_fixtures if CHAMPIONS_LEAGUE_LABEL in f.group]
-        cup = [f for f in club_fixtures if efl in f.group]
         if club == CHE:
             assert len(local) == MATCHES_PER_CLUB
             assert len(cl) == 0
-            assert len(cup) == 0
-        elif club in PREMIER_LEAGUE_TEAMS:
-            # EFL Cup R3 this week: 5 PL + 1 cup + 4 UCL
-            assert len(local) == LOCAL_MATCHES_PER_CLUB
-            assert len(cup) == 1
-            assert len(cl) == CL_MATCHES_PER_CLUB - 1
         else:
             assert len(local) == LOCAL_MATCHES_PER_CLUB
             assert len(cl) == CL_MATCHES_PER_CLUB
-            assert len(cup) == 0
 
 
 def test_total_fixture_count():
-    efl_clubs = 4  # ARS, MU, MC, LIV have cup this window
     assert len(LEAGUE_SEASON_FIXTURES) == len(LEAGUE_TEAMS) * MATCHES_PER_CLUB
     assert len(LOCAL_LEAGUE_FIXTURES) == len(LEAGUE_TEAMS) * LOCAL_MATCHES_PER_CLUB + 5
-    assert len(CHAMPIONS_LEAGUE_FIXTURES) == (
-        len(UCL_CLUBS) * CL_MATCHES_PER_CLUB - efl_clubs
-    )
+    assert len(CHAMPIONS_LEAGUE_FIXTURES) == len(UCL_CLUBS) * CL_MATCHES_PER_CLUB
+
 
 def test_local_labels_by_domestic_league():
     for fixture in LOCAL_LEAGUE_FIXTURES:
@@ -79,7 +68,6 @@ def test_kickoff_label_includes_competition():
             LOCAL_LA_LIGA_LABEL,
             LOCAL_PL_LABEL,
             CHAMPIONS_LEAGUE_LABEL,
-            "كأس الرابطة الإنجليزية",
         )
     )
 
@@ -241,16 +229,14 @@ def test_ucl_md2_window_after_mid_september():
 
 
 def test_arsenal_upcoming_window_opponents():
-    """Arsenal next is Ipswich (EFL Cup), then Brighton PL — not stuck on Brighton-only."""
+    """Arsenal PL + UCL window after MD1: Brighton through Real Madrid."""
     fixtures = sorted(fixtures_for_club("أرسنال"), key=lambda f: f.kickoff_utc)
     assert len(fixtures) == 10
-    assert (fixtures[0].home, fixtures[0].away) == ("إبسويتش", "أرسنال")
-    assert fixtures[0].kickoff_utc.startswith("2026-09-15")
-    assert "كأس الرابطة" in fixtures[0].group
-    assert (fixtures[1].home, fixtures[1].away) == ("برايتون", "أرسنال")
-    assert fixtures[1].kickoff_utc.startswith("2026-09-19")
+    assert (fixtures[0].home, fixtures[0].away) == ("برايتون", "أرسنال")
+    assert fixtures[0].kickoff_utc.startswith("2026-09-19")
     assert not any({f.home, f.away} == {"نابولي", "أرسنال"} for f in fixtures)
-    assert (fixtures[-1].home, fixtures[-1].away) == ("أرسنال", "بوروسيا دورتموند")
+    assert (fixtures[-1].home, fixtures[-1].away) == ("أرسنال", "ريال مدريد")
+    assert fixtures[-1].kickoff_utc.startswith("2026-12-09")
     slavia = [f for f in fixtures if "سلافيا" in f.home or "سلافيا" in f.away]
     assert len(slavia) == 1
     assert slavia[0].home == "سلافيا براغ"
