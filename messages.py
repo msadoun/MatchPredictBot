@@ -313,15 +313,20 @@ ADMIN_PREDICTIONS_FILE_CAPTION = "تقرير توقعات — {label}"
 BTN_ADMIN_MATCH_TABLE = "📋 جدول توقعات مباراة"
 ADMIN_MATCH_TABLE_PICK_STAGE = "📋 جدول توقعات مباراة\n\nاختر الفريق:"
 ADMIN_MATCH_TABLE_PICK_TEAM = "📋 جدول توقعات مباراة\n\nاختر الفريق:"
+ADMIN_MATCH_TABLE_PICK_MONTH = "📋 جدول توقعات مباراة — {team}\n\nاختر الشهر:"
 ADMIN_MATCH_TABLE_PICK_MATCH = "📋 {stage}\n\nاختر المباراة:"
+ADMIN_MATCH_TABLE_PICK_MATCH_MONTH = "📋 {team} · {month}\n\nاختر المباراة:"
 ADMIN_MATCH_TABLE_USAGE = (
     "📋 جدول توقعات مباراة\n\n"
     "الاستخدام:\n"
-    "• /matchtable — اختيار الفريق ثم المباراة\n"
+    "• /matchtable — اختيار الفريق ثم الشهر ثم المباراة\n"
     "• /matchtable <رقم_المباراة> — عرض الجدول مباشرة"
 )
 ADMIN_MATCH_TABLE_EMPTY = "لا توجد مباريات في قاعدة البيانات."
 ADMIN_MATCH_TABLE_EMPTY_STAGE = "لا توجد مباريات لـ «{stage}»."
+ADMIN_MATCH_TABLE_EMPTY_MONTH = "لا توجد مباريات لـ {team} في {month}."
+ADMIN_MATCH_TABLE_BTN_TEAMS = "↩️ رجوع للفرق"
+ADMIN_MATCH_TABLE_BTN_MONTHS = "↩️ رجوع للأشهر"
 
 SETGROUPPOINTS_USAGE = (
     "📊 تعديل النقاط اليدوية (تُضاف فوق نقاط التوقعات الجديدة):\n\n"
