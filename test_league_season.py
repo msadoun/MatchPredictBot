@@ -77,15 +77,17 @@ def test_fixtures_sorted_by_kickoff():
     assert kickoffs == sorted(kickoffs)
 
 
-def test_real_madrid_opens_at_espanyol():
+def test_real_madrid_next_local_is_rayo():
+    """MD5 window: Real Madrid host Rayo on Sat 12 Sep 2026, 21:00 CEST."""
     rm_local = [
         f
         for f in fixtures_for_club("ريال مدريد")
         if LOCAL_LA_LIGA_LABEL in f.group
     ]
     first = min(rm_local, key=lambda f: f.kickoff_utc)
-    assert first.away == "ريال مدريد"
-    assert first.home == "إسبانيول"
+    assert first.home == "ريال مدريد"
+    assert first.away == "رايو فاليكانو"
+    assert first.kickoff_utc == "2026-09-12T19:00:00"
 
 
 def test_season_starts_in_august_2026():
@@ -111,21 +113,50 @@ def test_gw1_opening_fixtures():
     assert next_local("أرسنال") == ("أرسنال", "كونتري")
     assert next_local("ليفربول") == ("نيوكاسل", "ليفربول")
     assert next_local("تشيلسي") == ("فولهام", "تشيلسي")
-    assert next_local("برشلونة") == ("إلتشي", "برشلونة")
-    assert next_local("ريال مدريد") == ("إسبانيول", "ريال مدريد")
+    assert next_local("برشلونة") == ("ليفانتي", "برشلونة")
+    assert next_local("ريال مدريد") == ("ريال مدريد", "رايو فاليكانو")
 
 
-def test_barcelona_rayo_jornada_3_official_date():
-    """La Liga lists Barça vs Rayo on Mon 31 Aug 2026, 19:30 CEST."""
+def test_barcelona_levante_jornada_5_official_date():
+    """La Liga lists Levante vs Barça on Sun 13 Sep 2026, 16:15 CEST."""
     local = [
         f
         for f in fixtures_for_club("برشلونة")
         if LOCAL_LA_LIGA_LABEL in f.group
-        and f.home == "برشلونة"
-        and f.away == "رايو فاليكانو"
+        and f.home == "ليفانتي"
+        and f.away == "برشلونة"
     ]
     assert len(local) == 1
-    assert local[0].kickoff_utc == "2026-08-31T19:30:00"
+    assert local[0].kickoff_utc == "2026-09-13T14:15:00"
+
+
+def test_real_madrid_barcelona_md5_to_md9_opponents():
+    """Official La Liga MD5–9 opponents for Real Madrid and Barcelona."""
+    def local_pairs(club: str) -> list[tuple[str, str, str]]:
+        local = sorted(
+            (
+                f
+                for f in fixtures_for_club(club)
+                if LOCAL_LA_LIGA_LABEL in f.group
+            ),
+            key=lambda f: f.kickoff_utc,
+        )
+        return [(f.home, f.away, f.kickoff_utc) for f in local]
+
+    assert local_pairs("ريال مدريد") == [
+        ("ريال مدريد", "رايو فاليكانو", "2026-09-12T19:00:00"),
+        ("إلتشي", "ريال مدريد", "2026-09-15T19:30:00"),
+        ("أتلتيكو مدريد", "ريال مدريد", "2026-09-20T14:15:00"),
+        ("ريال مدريد", "فياريال", "2026-10-10T19:00:00"),
+        ("ريال مدريد", "إشبيلية", "2026-10-18T19:00:00"),
+    ]
+    assert local_pairs("برشلونة") == [
+        ("ليفانتي", "برشلونة", "2026-09-13T14:15:00"),
+        ("برشلونة", "راسينغ سانتاندر", "2026-09-16T19:30:00"),
+        ("إشبيلية", "برشلونة", "2026-09-19T19:00:00"),
+        ("برشلونة", "خيتافي", "2026-10-10T16:30:00"),
+        ("ريال بيتيس", "برشلونة", "2026-10-18T19:00:00"),
+    ]
 
 
 def test_ucl_md1_official_2026_27_draw():
