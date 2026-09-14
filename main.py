@@ -40,6 +40,7 @@ from handlers import (
     load_worldcup_command,
     load_season_command,
     matches_command,
+    my_predictions_callback,
     my_predictions_command,
     predict_callback,
     predict_cancel_command,
@@ -382,6 +383,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^lb:"))
     app.add_handler(CallbackQueryHandler(admin_predictions_callback, pattern=r"^adminpred:"))
     app.add_handler(CallbackQueryHandler(predict_callback, pattern=r"^pred:"))
+    app.add_handler(CallbackQueryHandler(my_predictions_callback, pattern=r"^mypred:"))
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, stale_keyboard_handler),
         group=0,
