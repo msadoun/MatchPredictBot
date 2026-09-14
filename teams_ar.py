@@ -241,6 +241,7 @@ GROUP_EN_TO_AR: dict[str, str] = {
 ARABIC_TEAM_ALIASES: dict[str, str] = {
     "كوفنتري": "كونتري",
     "سندرلاند": "ساندرلاند",
+    "سلافيا براج": "سلافيا براغ",
 }
 
 

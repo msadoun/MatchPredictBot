@@ -49,3 +49,20 @@ def test_reconcile_removes_stale_english_openers():
     pairs = {(m.home_team, m.away_team) for m in remaining}
     assert ("أرسنال", "كونتري") not in pairs
     assert ("هال", "مانشستر يونايتد") not in pairs
+
+
+def test_reconcile_removes_arsenal_ucl_md1_napoli():
+    db = _fresh()
+    db.add_match(
+        "نابولي",
+        "أرسنال",
+        "2026-09-09T19:00:00 · الجولة 1 · دوري أبطال أوروبا",
+    )
+    result = db.seed_league_season_matches()
+    assert result["removed"] >= 1
+    remaining = db.list_matches(open_only=False, limit=None)
+    pairs = {(m.home_team, m.away_team) for m in remaining}
+    assert ("نابولي", "أرسنال") not in pairs
+    assert ("برايتون", "أرسنال") in pairs
+    assert ("أرسنال", "ليل") in pairs
+    assert ("أرسنال", "ريال مدريد") in pairs

@@ -106,10 +106,14 @@ def matches_for_scope(scope_type: str, scope_key: str) -> list[Match]:
             if m.kickoff_at and is_group_stage_label(stage_from_kickoff(m.kickoff_at) or "")
         ]
     if scope_type == "team":
+        from league_season import LEAGUE_SEASON_FIXTURES
+
+        allowed = {(f.home, f.away) for f in LEAGUE_SEASON_FIXTURES}
         return [
             m
             for m in all_matches
             if scope_key in (m.home_team, m.away_team)
+            and (m.home_team, m.away_team) in allowed
         ]
     return []
 

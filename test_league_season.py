@@ -208,8 +208,8 @@ def test_premier_league_gw5_window_opponents():
     assert che[9] == ("مانشستر سيتي", "تشيلسي", "2026-12-12T15:00:00")
 
 
-def test_ucl_md1_official_2026_27_draw():
-    """League phase MD1 from UEFA draw (27 Aug 2026)."""
+def test_ucl_md2_window_after_mid_september():
+    """UCL MD1 is done by mid-Sep 2026; calendar slides to MD2–6."""
     label = CHAMPIONS_LEAGUE_LABEL
 
     def first_ucl(club: str) -> tuple[str, str]:
@@ -220,9 +220,23 @@ def test_ucl_md1_official_2026_27_draw():
         first = cl[0]
         return first.home, first.away
 
-    assert first_ucl("ريال مدريد") == ("ريال مدريد", "إنتر ميلان")
-    assert first_ucl("مانشستر سيتي") == ("بورتو", "مانشستر سيتي")
-    assert first_ucl("برشلونة") == ("برشلونة", "فينوورد")
-    assert first_ucl("أرسنال") == ("نابولي", "أرسنال")
-    assert first_ucl("ليفربول") == ("ليفربول", "أتلتيكو مدريد")
-    assert first_ucl("مانشستر يونايتد") == ("مانشستر يونايتد", "صباح")
+    assert first_ucl("ريال مدريد") == ("آس روما", "ريال مدريد")
+    assert first_ucl("مانشستر سيتي") == ("مانشستر سيتي", "باريس سان جيرمان")
+    assert first_ucl("برشلونة") == ("غلطة سراي", "برشلونة")
+    assert first_ucl("أرسنال") == ("أرسنال", "ليل")
+    assert first_ucl("ليفربول") == ("لاسك", "ليفربول")
+    assert first_ucl("مانشستر يونايتد") == ("أتلتيكو مدريد", "مانشستر يونايتد")
+
+
+def test_arsenal_upcoming_window_opponents():
+    """Arsenal PL + UCL window after MD1: Brighton through Real Madrid."""
+    fixtures = sorted(fixtures_for_club("أرسنال"), key=lambda f: f.kickoff_utc)
+    assert len(fixtures) == 10
+    assert (fixtures[0].home, fixtures[0].away) == ("برايتون", "أرسنال")
+    assert fixtures[0].kickoff_utc.startswith("2026-09-19")
+    assert not any({f.home, f.away} == {"نابولي", "أرسنال"} for f in fixtures)
+    assert (fixtures[-1].home, fixtures[-1].away) == ("أرسنال", "ريال مدريد")
+    assert fixtures[-1].kickoff_utc.startswith("2026-12-09")
+    slavia = [f for f in fixtures if "سلافيا" in f.home or "سلافيا" in f.away]
+    assert len(slavia) == 1
+    assert slavia[0].home == "سلافيا براغ"
