@@ -66,3 +66,23 @@ def test_reconcile_removes_arsenal_ucl_md1_napoli():
     assert ("برايتون", "أرسنال") in pairs
     assert ("أرسنال", "ليل") in pairs
     assert ("أرسنال", "ريال مدريد") in pairs
+
+
+def test_stale_arsenal_psv_never_shown_as_next():
+    """Old wrong UCL Arsenal–PSV must not beat Brighton as Arsenal's next match."""
+    db = _fresh()
+    db.add_match(
+        "أرسنال",
+        "بي إس في",
+        "2026-09-16T19:00:00 · الجولة 1 · دوري أبطال أوروبا",
+    )
+    db.seed_league_season_matches()
+    remaining = {(m.home_team, m.away_team) for m in db.list_matches(open_only=False, limit=None)}
+    assert ("أرسنال", "بي إس في") not in remaining
+    next_ars = [
+        m
+        for m in db.list_next_open_match_per_league_club()
+        if "أرسنال" in (m.home_team, m.away_team)
+    ]
+    assert len(next_ars) == 1
+    assert (next_ars[0].home_team, next_ars[0].away_team) == ("برايتون", "أرسنال")

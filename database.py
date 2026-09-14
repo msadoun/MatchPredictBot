@@ -1047,17 +1047,22 @@ def list_next_open_match_per_league_club() -> list[Match]:
 
     Picks the soonest open kickoff across domestic and Champions League.
     When two tracked clubs play each other, the fixture is listed once.
+    Only calendar fixtures count — stale DB rows (e.g. old Arsenal–PSV) are ignored.
     """
-    from league_season import LEAGUE_TEAMS
+    from league_season import LEAGUE_SEASON_FIXTURES, LEAGUE_TEAMS
 
     # Insert any missing season fixtures (e.g. UCL after a domestic-only seed).
     seed_league_season_matches()
     sync_match_open_flags()
+    allowed = {(f.home, f.away) for f in LEAGUE_SEASON_FIXTURES}
     open_matches = list_matches(open_only=True, limit=None)
     by_club: dict[str, Match] = {}
     for club in LEAGUE_TEAMS:
         club_matches = [
-            m for m in open_matches if club in (m.home_team, m.away_team)
+            m
+            for m in open_matches
+            if club in (m.home_team, m.away_team)
+            and (m.home_team, m.away_team) in allowed
         ]
         club_matches.sort(key=lambda m: (m.kickoff_at or "", m.id))
         if club_matches:
@@ -1258,8 +1263,10 @@ def reconcile_league_season_matches() -> int:
     """Remove stale league-club fixtures that are no longer in the calendar.
 
     Keeps rows that still have predictions (closes them instead of deleting).
+    Canonicalizes Arabic aliases so old spellings (e.g. آرسنال–بي إس في) still purge.
     """
     from league_season import LEAGUE_SEASON_FIXTURES, LEAGUE_TEAMS
+    from teams_ar import canonical_team_name
 
     allowed = {(f.home, f.away) for f in LEAGUE_SEASON_FIXTURES}
     league_teams = set(LEAGUE_TEAMS)
@@ -1270,11 +1277,19 @@ def reconcile_league_season_matches() -> int:
             "SELECT id, home_team, away_team FROM matches"
         ).fetchall()
         for row in rows:
-            home = row["home_team"]
-            away = row["away_team"]
+            home_raw = row["home_team"]
+            away_raw = row["away_team"]
+            home = canonical_team_name(home_raw)
+            away = canonical_team_name(away_raw)
             if home not in league_teams and away not in league_teams:
                 continue
             if (home, away) in allowed:
+                # Fix alias spelling on the row if needed.
+                if (home_raw, away_raw) != (home, away):
+                    conn.execute(
+                        "UPDATE matches SET home_team = ?, away_team = ? WHERE id = ?",
+                        (home, away, row["id"]),
+                    )
                 continue
             pred_count = conn.execute(
                 "SELECT COUNT(*) FROM predictions WHERE match_id = ?",
