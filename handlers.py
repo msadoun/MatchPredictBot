@@ -2530,7 +2530,53 @@ def _admin_match_photo_team_keyboard() -> InlineKeyboardMarkup:
     return _admin_team_picker_keyboard(callback_prefix="adminpred:phototeam")
 
 
-def _admin_match_photo_picker_keyboard(matches: list[db.Match]) -> InlineKeyboardMarkup:
+def _months_for_matches(matches: list[db.Match]) -> list[str]:
+    months: set[str] = set()
+    for match in matches:
+        year_month = _match_year_month(match.kickoff_at)
+        if year_month:
+            months.add(year_month)
+    return sorted(months)
+
+
+def _matches_for_month(matches: list[db.Match], year_month: str) -> list[db.Match]:
+    return [
+        match
+        for match in matches
+        if _match_year_month(match.kickoff_at) == year_month
+    ]
+
+
+def _admin_match_table_month_keyboard(
+    team_index: int,
+    months: list[str],
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for year_month in months:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    _format_year_month_label(year_month),
+                    callback_data=f"adminpred:photomonth:{team_index}:{year_month}",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                msg.ADMIN_MATCH_TABLE_BTN_TEAMS,
+                callback_data="adminpred:photopick",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _admin_match_photo_picker_keyboard(
+    matches: list[db.Match],
+    *,
+    team_index: int | None = None,
+) -> InlineKeyboardMarkup:
     from knockout_teams import resolved_knockout_display_map
 
     display_map = resolved_knockout_display_map(matches) if matches else {}
@@ -2548,9 +2594,13 @@ def _admin_match_photo_picker_keyboard(matches: list[db.Match]) -> InlineKeyboar
                 )
             ]
         )
-    rows.append(
-        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:photopick")]
-    )
+    if team_index is None:
+        back_data = "adminpred:photopick"
+        back_label = msg.ADMIN_MATCH_TABLE_BTN_TEAMS
+    else:
+        back_data = f"adminpred:phototeam:{team_index}"
+        back_label = msg.ADMIN_MATCH_TABLE_BTN_MONTHS
+    rows.append([InlineKeyboardButton(back_label, callback_data=back_data)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -2586,10 +2636,11 @@ async def _show_match_table_team_picker(
         )
 
 
-async def _show_match_table_match_picker(
+async def _show_match_table_month_picker(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     team_key: str,
+    team_index: int,
 ) -> None:
     matches = reports.matches_for_scope("team", team_key)
     if not matches:
@@ -2602,12 +2653,65 @@ async def _show_match_table_match_picker(
         )
         return
 
+    months = _months_for_matches(matches)
     context.user_data["adminphoto_team"] = team_key
+    context.user_data["adminphoto_team_index"] = team_index
+    if not months:
+        await edit_or_send_user(
+            update,
+            context,
+            msg.ADMIN_MATCH_TABLE_EMPTY_STAGE.format(stage=team_key),
+            reply_markup=_admin_match_photo_team_keyboard(),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
     await edit_or_send_user(
         update,
         context,
-        msg.ADMIN_MATCH_TABLE_PICK_MATCH.format(stage=team_key),
-        reply_markup=_admin_match_photo_picker_keyboard(matches),
+        msg.ADMIN_MATCH_TABLE_PICK_MONTH.format(team=team_key),
+        reply_markup=_admin_match_table_month_keyboard(team_index, months),
+        bot_username=BOT_USERNAME,
+    )
+
+
+async def _show_match_table_match_picker(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    team_key: str,
+    *,
+    team_index: int,
+    year_month: str,
+) -> None:
+    matches = reports.matches_for_scope("team", team_key)
+    month_matches = _matches_for_month(matches, year_month)
+    month_label = _format_year_month_label(year_month)
+    if not month_matches:
+        await edit_or_send_user(
+            update,
+            context,
+            msg.ADMIN_MATCH_TABLE_EMPTY_MONTH.format(
+                team=team_key, month=month_label
+            ),
+            reply_markup=_admin_match_table_month_keyboard(
+                team_index, _months_for_matches(matches)
+            ),
+            bot_username=BOT_USERNAME,
+        )
+        return
+
+    context.user_data["adminphoto_team"] = team_key
+    context.user_data["adminphoto_team_index"] = team_index
+    context.user_data["adminphoto_month"] = year_month
+    await edit_or_send_user(
+        update,
+        context,
+        msg.ADMIN_MATCH_TABLE_PICK_MATCH_MONTH.format(
+            team=team_key, month=month_label
+        ),
+        reply_markup=_admin_match_photo_picker_keyboard(
+            month_matches, team_index=team_index
+        ),
         bot_username=BOT_USERNAME,
     )
 
@@ -2755,10 +2859,32 @@ async def admin_predictions_callback(
         return
 
     if action == "phototeam" and len(parts) >= 3:
+        try:
+            team_index = int(parts[2])
+        except ValueError:
+            return
         team = _resolve_league_team(parts[2])
         if not team:
             return
-        await _show_match_table_match_picker(update, context, team)
+        await _show_match_table_month_picker(update, context, team, team_index)
+        return
+
+    if action == "photomonth" and len(parts) >= 4:
+        try:
+            team_index = int(parts[2])
+        except ValueError:
+            return
+        team = _resolve_league_team(parts[2])
+        year_month = parts[3]
+        if not team or _match_year_month(f"{year_month}-01") != year_month:
+            return
+        await _show_match_table_match_picker(
+            update,
+            context,
+            team,
+            team_index=team_index,
+            year_month=year_month,
+        )
         return
 
     if action == "photo" and len(parts) >= 3:
