@@ -90,12 +90,13 @@ def test_real_madrid_next_local_is_rayo():
     assert first.kickoff_utc == "2026-09-12T19:00:00"
 
 
-def test_season_starts_in_august_2026():
-    assert LEAGUE_SEASON_FIXTURES[0].kickoff_utc.startswith("2026-08")
+def test_season_starts_in_september_2026():
+    """Sliding window starts at UCL MD1 / La Liga MD5 (mid-Sep 2026)."""
+    assert LEAGUE_SEASON_FIXTURES[0].kickoff_utc.startswith("2026-09")
 
 
-def test_gw1_opening_fixtures():
-    """2026/27 gameweek 1 / jornada opening matches per official calendars."""
+def test_next_local_fixtures_mid_september_window():
+    """Next domestic matches after mid-Sep 2026 (PL GW5 / La Liga MD5)."""
     def next_local(club: str) -> tuple[str, str]:
         local = sorted(
             (
@@ -108,11 +109,11 @@ def test_gw1_opening_fixtures():
         first = local[0]
         return first.home, first.away
 
-    assert next_local("مانشستر يونايتد") == ("هال", "مانشستر يونايتد")
-    assert next_local("مانشستر سيتي") == ("مانشستر سيتي", "بورنموث")
-    assert next_local("أرسنال") == ("أرسنال", "كونتري")
-    assert next_local("ليفربول") == ("نيوكاسل", "ليفربول")
-    assert next_local("تشيلسي") == ("فولهام", "تشيلسي")
+    assert next_local("مانشستر يونايتد") == ("فولهام", "مانشستر يونايتد")
+    assert next_local("مانشستر سيتي") == ("مانشستر سيتي", "ساندرلاند")
+    assert next_local("أرسنال") == ("برايتون", "أرسنال")
+    assert next_local("ليفربول") == ("بورنموث", "ليفربول")
+    assert next_local("تشيلسي") == ("برنتفورد", "تشيلسي")
     assert next_local("برشلونة") == ("ليفانتي", "برشلونة")
     assert next_local("ريال مدريد") == ("ريال مدريد", "رايو فاليكانو")
 
@@ -157,6 +158,54 @@ def test_real_madrid_barcelona_md5_to_md9_opponents():
         ("برشلونة", "خيتافي", "2026-10-10T16:30:00"),
         ("ريال بيتيس", "برشلونة", "2026-10-18T19:00:00"),
     ]
+
+
+def test_premier_league_gw5_window_opponents():
+    """Official PL GW5+ window (Sports Mole TV schedule, mid-Sep 2026)."""
+    def local_pairs(club: str) -> list[tuple[str, str, str]]:
+        local = sorted(
+            (
+                f
+                for f in fixtures_for_club(club)
+                if LOCAL_PL_LABEL in f.group
+            ),
+            key=lambda f: f.kickoff_utc,
+        )
+        return [(f.home, f.away, f.kickoff_utc) for f in local]
+
+    assert local_pairs("أرسنال") == [
+        ("برايتون", "أرسنال", "2026-09-19T14:00:00"),
+        ("أرسنال", "ليدز يونايتد", "2026-10-10T11:30:00"),
+        ("نوتنغهام فورست", "أرسنال", "2026-10-18T15:30:00"),
+        ("أرسنال", "إيفرتون", "2026-10-24T14:00:00"),
+        ("ليفربول", "أرسنال", "2026-11-01T16:30:00"),
+    ]
+    assert local_pairs("مانشستر يونايتد")[:5] == [
+        ("فولهام", "مانشستر يونايتد", "2026-09-20T15:30:00"),
+        ("مانشستر يونايتد", "توتنهام", "2026-10-10T16:30:00"),
+        ("ليدز يونايتد", "مانشستر يونايتد", "2026-10-18T13:00:00"),
+        ("مانشستر يونايتد", "بورنموث", "2026-10-25T14:00:00"),
+        ("تشيلسي", "مانشستر يونايتد", "2026-10-31T12:30:00"),
+    ]
+    assert local_pairs("مانشستر سيتي") == [
+        ("مانشستر سيتي", "ساندرلاند", "2026-09-19T14:00:00"),
+        ("ليفربول", "مانشستر سيتي", "2026-10-11T15:30:00"),
+        ("مانشستر سيتي", "إبسويتش", "2026-10-17T14:00:00"),
+        ("أستون فيلا", "مانشستر سيتي", "2026-10-24T11:30:00"),
+        ("مانشستر سيتي", "برايتون", "2026-10-31T15:00:00"),
+    ]
+    assert local_pairs("ليفربول") == [
+        ("بورنموث", "ليفربول", "2026-09-20T13:00:00"),
+        ("ليفربول", "مانشستر سيتي", "2026-10-11T15:30:00"),
+        ("برنتفورد", "ليفربول", "2026-10-17T14:00:00"),
+        ("ليفربول", "برايتون", "2026-10-25T14:00:00"),
+        ("ليفربول", "أرسنال", "2026-11-01T16:30:00"),
+    ]
+    che = local_pairs("تشيلسي")
+    assert len(che) == 10
+    assert che[0] == ("برنتفورد", "تشيلسي", "2026-09-18T19:00:00")
+    assert che[5] == ("ساندرلاند", "تشيلسي", "2026-11-07T15:00:00")
+    assert che[9] == ("مانشستر سيتي", "تشيلسي", "2026-12-12T15:00:00")
 
 
 def test_ucl_md1_official_2026_27_draw():
