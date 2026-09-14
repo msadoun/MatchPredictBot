@@ -236,7 +236,7 @@ SYNCSCORES_DONE = (
 BTN_ADMIN_PREDICTIONS = "⚙️ لوحة المسؤول"
 ADMIN_PREDICTIONS_MENU = (
     "⚙️ لوحة المسؤول\n\n"
-    "اختر تقريراً أو جدولاً، أو اعرض قائمة الأوامر:"
+    "اختر فريقاً لعرض توقعات مبارياته، أو جدولاً/تقريراً محفوظاً:"
 )
 BTN_ADMIN_COMMANDS = "📖 أوامر المسؤول"
 ADMIN_COMMANDS_TEXT = (
@@ -287,6 +287,7 @@ ADMIN_PREDICTIONS_GROUP_STAGE = "⚽ دور المجموعات (كامل)"
 ADMIN_PREDICTIONS_SAVED = "💾 التقارير المحفوظة"
 ADMIN_PREDICTIONS_PICK_DAY = "اختر يوم المباريات:"
 ADMIN_PREDICTIONS_PICK_STAGE = "اختر المرحلة أو المجموعة:"
+ADMIN_PREDICTIONS_PICK_TEAM = "اختر الفريق:"
 ADMIN_PREDICTIONS_SCOPE_HEADER = "{summary}\n\nاختر إجراء:"
 ADMIN_PREDICTIONS_BTN_VIEW = "👁 عرض في المحادثة"
 ADMIN_PREDICTIONS_BTN_SAVE = "💾 حفظ وإرسال ملف Excel"
@@ -302,16 +303,17 @@ ADMIN_PREDICTIONS_EXPORT_DONE = (
 ADMIN_PREDICTIONS_FILE_CAPTION = "تقرير توقعات — {label}"
 
 BTN_ADMIN_MATCH_TABLE = "📋 جدول توقعات مباراة"
-ADMIN_MATCH_TABLE_PICK_STAGE = "📋 جدول توقعات مباراة\n\nاختر المرحلة أو المجموعة:"
+ADMIN_MATCH_TABLE_PICK_STAGE = "📋 جدول توقعات مباراة\n\nاختر الفريق:"
+ADMIN_MATCH_TABLE_PICK_TEAM = "📋 جدول توقعات مباراة\n\nاختر الفريق:"
 ADMIN_MATCH_TABLE_PICK_MATCH = "📋 {stage}\n\nاختر المباراة:"
 ADMIN_MATCH_TABLE_USAGE = (
     "📋 جدول توقعات مباراة\n\n"
     "الاستخدام:\n"
-    "• /matchtable — اختيار المرحلة ثم المباراة\n"
+    "• /matchtable — اختيار الفريق ثم المباراة\n"
     "• /matchtable <رقم_المباراة> — عرض الجدول مباشرة"
 )
 ADMIN_MATCH_TABLE_EMPTY = "لا توجد مباريات في قاعدة البيانات."
-ADMIN_MATCH_TABLE_EMPTY_STAGE = "لا توجد مباريات في «{stage}»."
+ADMIN_MATCH_TABLE_EMPTY_STAGE = "لا توجد مباريات لـ «{stage}»."
 
 SETGROUPPOINTS_USAGE = (
     "📊 تعديل النقاط اليدوية (تُضاف فوق نقاط التوقعات الجديدة):\n\n"

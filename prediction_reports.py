@@ -105,6 +105,12 @@ def matches_for_scope(scope_type: str, scope_key: str) -> list[Match]:
             for m in all_matches
             if m.kickoff_at and is_group_stage_label(stage_from_kickoff(m.kickoff_at) or "")
         ]
+    if scope_type == "team":
+        return [
+            m
+            for m in all_matches
+            if scope_key in (m.home_team, m.away_team)
+        ]
     return []
 
 
@@ -113,8 +119,15 @@ def scope_label(scope_type: str, scope_key: str) -> str:
         return f"يوم {scope_key}"
     if scope_type == "group_stage":
         return GROUP_STAGE_LABEL
+    if scope_type == "team":
+        return f"مباريات {scope_key}"
     return scope_key
 
+
+def list_league_teams() -> list[str]:
+    from league_season import LEAGUE_TEAMS
+
+    return list(LEAGUE_TEAMS)
 
 def _resolve_excel_roster_user(ref: str):
     from group_standings import resolve_excel_user
