@@ -15,6 +15,7 @@ from database import (
     purge_legacy_km3na_group,
     clear_legacy_km3na_manual_points,
     score_all_finished_matches,
+    seed_league_season_matches,
     sync_auto_group_points,
     sync_live_match_scores,
     sync_match_open_flags,
@@ -285,8 +286,19 @@ def main() -> None:
     if linked:
         logger.info("Linked %d predictor(s) to their group for leaderboard", linked)
     seed_result = ensure_world_cup_seeded()
-    if seed_result["added"]:
+    if seed_result.get("added"):
         logger.info("Seeded %d World Cup matches on startup", seed_result["added"])
+    try:
+        league_seed = seed_league_season_matches()
+        if any(league_seed.get(k, 0) for k in ("added", "updated", "removed")):
+            logger.info(
+                "League season sync: added=%s updated=%s removed=%s",
+                league_seed.get("added", 0),
+                league_seed.get("updated", 0),
+                league_seed.get("removed", 0),
+            )
+    except Exception as exc:
+        logger.warning("League season sync skipped: %s", exc)
     backfilled = backfill_match_kickoff_times()
     if backfilled:
         logger.info("Backfilled kickoff times on %d matches", backfilled)

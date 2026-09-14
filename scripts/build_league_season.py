@@ -114,8 +114,8 @@ FIXTURES: list[tuple[str, str, str, str, str]] = [
     m("MU", O["LEE"], TEAMS["MU"], kickoff("2026-10-18", "13:00:00"), 7, "pl"),
     m("MU", TEAMS["MU"], O["BOU"], kickoff("2026-10-25", "14:00:00"), 8, "pl"),
     m("MU", TEAMS["CHE"], TEAMS["MU"], kickoff("2026-10-31", "12:30:00"), 9, "pl"),
-    # Man City: Sunderland H · Liverpool A · Ipswich H · Villa A · Brighton H
-    m("MC", TEAMS["MC"], O["SUN"], kickoff("2026-09-19", "14:00:00"), 5, "pl"),
+    # Man City: Sunderland H (moved to Sun 20 Sep 14:00 BST / PL) · Liverpool A · Ipswich H · Villa A · Brighton H
+    m("MC", TEAMS["MC"], O["SUN"], kickoff("2026-09-20", "13:00:00"), 5, "pl"),
     m("MC", TEAMS["LIV"], TEAMS["MC"], kickoff("2026-10-11", "15:30:00"), 6, "pl"),
     m("MC", TEAMS["MC"], O["IPS"], kickoff("2026-10-17", "14:00:00"), 7, "pl"),
     m("MC", O["AVL"], TEAMS["MC"], kickoff("2026-10-24", "11:30:00"), 8, "pl"),
