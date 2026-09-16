@@ -380,42 +380,70 @@ def build_match_photo_workbook(match: Match) -> Workbook:
     return workbook
 
 
-def _excel_rows(
+def _sheet_title_for_match(match: Match, *, used: set[str]) -> str:
+    """Excel sheet title unique within the workbook (max 31 chars)."""
+    from knockout_teams import resolve_match_display_teams
+
+    home, away = resolve_match_display_teams(match)
+    raw = f"#{match.id} {home}-{away}"
+    cleaned = re.sub(r"[\\/*?:\[\]]+", " ", raw).strip()
+    base = (cleaned or f"match_{match.id}")[:31]
+    title = base
+    suffix = 2
+    while title in used:
+        tail = f"_{suffix}"
+        title = f"{base[: 31 - len(tail)]}{tail}"
+        suffix += 1
+    used.add(title)
+    return title
+
+
+def _write_match_sheet(
+    sheet,
+    rows: list[tuple[str, str, str, str, int | str, str]],
+) -> None:
+    sheet.append(list(EXCEL_HEADERS))
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for row in rows:
+        sheet.append(list(row))
+    for column_index, header in enumerate(EXCEL_HEADERS, start=1):
+        column = get_column_letter(column_index)
+        max_len = len(header)
+        for excel_row in sheet.iter_rows(
+            min_row=2,
+            min_col=column_index,
+            max_col=column_index,
+            values_only=True,
+        ):
+            if excel_row[0] is not None:
+                max_len = max(max_len, len(str(excel_row[0])))
+        sheet.column_dimensions[column].width = min(max_len + 2, 50)
+
+
+def _excel_rows_for_match(
     report: PredictionReport,
+    match: Match,
 ) -> list[tuple[str, str, str, str, int | str, str]]:
     rows: list[tuple[str, str, str, str, int | str, str]] = []
     for user in report.users:
-        for match in report.matches:
-            cell = report.predictions.get((user.id, match.id))
-            if cell:
-                points = cell.points if cell.points is not None else 0
-                rows.append(
-                    (
-                        user.display_name,
-                        _score_line(match, cell.home_score, cell.away_score),
-                        _actual_result(match),
-                        _match_round(match),
-                        points,
-                        _double_points_label(cell.is_doubled),
-                    )
-                )
-            elif user.id in report.always_include_user_ids:
-                rows.append(
-                    (
-                        user.display_name,
-                        "",
-                        _actual_result(match),
-                        _match_round(match),
-                        "",
-                        "",
-                    )
-                )
-
-    for name in report.extra_display_names:
-        for match in report.matches:
+        cell = report.predictions.get((user.id, match.id))
+        if cell:
+            points = cell.points if cell.points is not None else 0
             rows.append(
                 (
-                    name,
+                    user.display_name,
+                    _score_line(match, cell.home_score, cell.away_score),
+                    _actual_result(match),
+                    _match_round(match),
+                    points,
+                    _double_points_label(cell.is_doubled),
+                )
+            )
+        elif user.id in report.always_include_user_ids:
+            rows.append(
+                (
+                    user.display_name,
                     "",
                     _actual_result(match),
                     _match_round(match),
@@ -423,35 +451,122 @@ def _excel_rows(
                     "",
                 )
             )
+
+    for name in report.extra_display_names:
+        rows.append(
+            (
+                name,
+                "",
+                _actual_result(match),
+                _match_round(match),
+                "",
+                "",
+            )
+        )
+    return rows
+
+
+def _excel_rows(
+    report: PredictionReport,
+) -> list[tuple[str, str, str, str, int | str, str]]:
+    rows: list[tuple[str, str, str, str, int | str, str]] = []
+    for match in report.matches:
+        rows.extend(_excel_rows_for_match(report, match))
     return rows
 
 
 def report_to_excel(report: PredictionReport) -> Workbook:
+    """Build an Excel workbook with one sheet per match."""
     workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = report.scope_label[:31] or "predictions"
+    used_titles: set[str] = set()
 
-    sheet.append(list(EXCEL_HEADERS))
-    for cell in sheet[1]:
-        cell.font = Font(bold=True)
+    if not report.matches:
+        sheet = workbook.active
+        sheet.title = (report.scope_label[:31] or "predictions")
+        _write_match_sheet(sheet, [])
+        return workbook
 
-    for row in _excel_rows(report):
-        sheet.append(list(row))
-
-    for column_index, header in enumerate(EXCEL_HEADERS, start=1):
-        column = get_column_letter(column_index)
-        max_len = len(header)
-        for row in sheet.iter_rows(
-            min_row=2,
-            min_col=column_index,
-            max_col=column_index,
-            values_only=True,
-        ):
-            if row[0] is not None:
-                max_len = max(max_len, len(str(row[0])))
-        sheet.column_dimensions[column].width = min(max_len + 2, 50)
+    for index, match in enumerate(report.matches):
+        rows = _excel_rows_for_match(report, match)
+        title = _sheet_title_for_match(match, used=used_titles)
+        if index == 0:
+            sheet = workbook.active
+            sheet.title = title
+        else:
+            sheet = workbook.create_sheet(title=title)
+        _write_match_sheet(sheet, rows)
 
     return workbook
+
+
+def build_match_prediction_report(match: Match) -> PredictionReport:
+    """Prediction report for a single match (admin Excel / table export)."""
+    from database import _row_to_user
+
+    with get_db() as conn:
+        user_rows = conn.execute(
+            """
+            SELECT DISTINCT u.*
+            FROM users u
+            INNER JOIN predictions p ON p.user_id = u.id
+            WHERE p.match_id = ?
+            ORDER BY u.display_name ASC
+            """,
+            (match.id,),
+        ).fetchall()
+        pred_rows = conn.execute(
+            """
+            SELECT p.user_id, p.match_id, p.home_score, p.away_score, p.points,
+                   p.is_doubled
+            FROM predictions p
+            WHERE p.match_id = ?
+            """,
+            (match.id,),
+        ).fetchall()
+
+    users = [_row_to_user(row) for row in user_rows]
+    predictions: dict[tuple[int, int], PredictionCell] = {}
+    for row in pred_rows:
+        predictions[(row["user_id"], row["match_id"])] = PredictionCell(
+            home_score=row["home_score"],
+            away_score=row["away_score"],
+            points=row["points"],
+            is_doubled=bool(row["is_doubled"] or 0),
+        )
+
+    users, always_include_user_ids, extra_display_names = _resolve_always_include_users(
+        users
+    )
+    from knockout_teams import resolve_match_display_teams
+
+    home, away = resolve_match_display_teams(match)
+    return PredictionReport(
+        scope_type="match",
+        scope_key=str(match.id),
+        scope_label=f"#{match.id} {home} ضد {away}",
+        matches=[match],
+        users=users,
+        predictions=predictions,
+        always_include_user_ids=always_include_user_ids,
+        extra_display_names=extra_display_names,
+    )
+
+
+def match_predictions_to_excel(match: Match) -> Workbook:
+    """Single-match workbook (one sheet) for admin match exports."""
+    return report_to_excel(build_match_prediction_report(match))
+
+
+def save_match_prediction_export(
+    match: Match,
+    *,
+    saved_by_telegram_id: int | None = None,
+) -> tuple[Path, SavedExport]:
+    report = build_match_prediction_report(match)
+    return save_prediction_export(
+        report,
+        saved_by_telegram_id=saved_by_telegram_id,
+    )
 
 
 def save_prediction_export(
