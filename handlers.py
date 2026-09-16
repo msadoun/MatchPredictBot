@@ -2423,12 +2423,25 @@ async def sync_scores_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 def _admin_predictions_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
+    rows: list[list[InlineKeyboardButton]] = []
+    for index, team in enumerate(reports.list_league_teams()):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"💾 Excel · {team}",
+                    callback_data=f"adminpred:scope:team:{index}",
+                )
+            ]
+        )
+    rows.extend(
         [
             [InlineKeyboardButton(msg.BTN_ADMIN_MATCH_TABLE, callback_data="adminpred:photopick")],
+            [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_SAVED, callback_data="adminpred:saved")],
             [InlineKeyboardButton(msg.BTN_ADMIN_COMMANDS, callback_data="adminpred:commands")],
+            [InlineKeyboardButton(msg.BTN_BACK_MENU, callback_data="menu:main")],
         ]
     )
+    return InlineKeyboardMarkup(rows)
 
 
 def _admin_commands_keyboard() -> InlineKeyboardMarkup:
@@ -2730,6 +2743,18 @@ async def _send_match_prediction_table(
         text = text[:3900] + "\n…"
     chat_id = user.id if is_group_chat(update) else update.effective_chat.id
     await context.bot.send_message(chat_id=chat_id, text=text)
+
+    # Also save + send Excel (one sheet for this match).
+    path, saved = reports.save_match_prediction_export(
+        match,
+        saved_by_telegram_id=user.id,
+    )
+    await _send_admin_report_document(
+        update,
+        context,
+        path,
+        msg.ADMIN_PREDICTIONS_FILE_CAPTION.format(label=saved.scope_label),
+    )
 
 
 async def match_table_command(

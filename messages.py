@@ -244,7 +244,9 @@ SYNCSCORES_DONE = (
 BTN_ADMIN_PREDICTIONS = "⚙️ لوحة المسؤول"
 ADMIN_PREDICTIONS_MENU = (
     "⚙️ لوحة المسؤول\n\n"
-    "اختر جدولاً أو قائمة الأوامر:"
+    "💾 Excel — اختر فريقاً: ملف واحد وورقة لكل مباراة\n"
+    "📋 جدول توقعات — عرض مباراة + إرسال Excel لها\n"
+    "أو قائمة الأوامر:"
 )
 BTN_ADMIN_COMMANDS = "📖 أوامر المسؤول"
 ADMIN_COMMANDS_TEXT = (
@@ -298,13 +300,13 @@ ADMIN_PREDICTIONS_PICK_STAGE = "اختر المرحلة أو المجموعة:"
 ADMIN_PREDICTIONS_PICK_TEAM = "اختر الفريق:"
 ADMIN_PREDICTIONS_SCOPE_HEADER = "{summary}\n\nاختر إجراء:"
 ADMIN_PREDICTIONS_BTN_VIEW = "👁 عرض في المحادثة"
-ADMIN_PREDICTIONS_BTN_SAVE = "💾 حفظ وإرسال ملف Excel"
+ADMIN_PREDICTIONS_BTN_SAVE = "💾 حفظ وإرسال ملف Excel (ورقة لكل مباراة)"
 ADMIN_PREDICTIONS_BTN_BACK = "↩️ رجوع"
 ADMIN_PREDICTIONS_SAVED_EMPTY = "لا توجد تقارير محفوظة بعد."
 ADMIN_PREDICTIONS_SAVED_LIST = "💾 التقارير المحفوظة:\n"
 ADMIN_PREDICTIONS_SAVED_ROW = "#{id} · {label} · {users} لاعب · {predictions} توقع · {saved_at}"
 ADMIN_PREDICTIONS_EXPORT_DONE = (
-    "✅ تم حفظ التقرير.\n\n"
+    "✅ تم حفظ التقرير (ورقة Excel لكل مباراة).\n\n"
     "{summary}\n\n"
     "📁 الملف: {filename}"
 )
