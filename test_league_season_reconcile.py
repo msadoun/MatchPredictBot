@@ -3,6 +3,7 @@
 import importlib
 import os
 import tempfile
+from datetime import datetime
 
 
 def _fresh():
@@ -79,9 +80,10 @@ def test_stale_arsenal_psv_never_shown_as_next():
     db.seed_league_season_matches()
     remaining = {(m.home_team, m.away_team) for m in db.list_matches(open_only=False, limit=None)}
     assert ("أرسنال", "بي إس في") not in remaining
+    now = datetime(2026, 9, 17, 12, 0, 0)
     next_ars = [
         m
-        for m in db.list_next_open_match_per_league_club()
+        for m in db.list_next_open_match_per_league_club(now=now)
         if "أرسنال" in (m.home_team, m.away_team)
     ]
     assert len(next_ars) == 1
