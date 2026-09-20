@@ -963,6 +963,23 @@ def match_has_started(match: Match, *, now: datetime | None = None) -> bool:
     return kickoff <= check
 
 
+# Predictions open only in the 72 hours before kickoff.
+PREDICTION_WINDOW_HOURS = 72
+
+
+def match_in_prediction_window(match: Match, *, now: datetime | None = None) -> bool:
+    """True when kickoff is still upcoming and within the next 72 hours."""
+    from worldcup2026 import safe_kickoff_datetime
+
+    kickoff = safe_kickoff_datetime(match.kickoff_at)
+    if kickoff is None:
+        return False
+    check = now or datetime.utcnow()
+    if kickoff <= check:
+        return False
+    return kickoff <= check + timedelta(hours=PREDICTION_WINDOW_HOURS)
+
+
 def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
     if match.predictions_override:
         return True
@@ -970,7 +987,11 @@ def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> b
         return False
     if match_has_started(match, now=now):
         return False
-    if not match.is_open:
+    if not match_in_prediction_window(match, now=now):
+        return False
+    # `is_open` is synced to wall-clock kickoff. When `now` is injected (tests /
+    # simulation), trust kickoff + 72h window only.
+    if now is None and not match.is_open:
         return False
     return True
 
@@ -1042,12 +1063,14 @@ def is_league_season_loaded() -> bool:
     return row is not None
 
 
-def list_next_open_match_per_league_club() -> list[Match]:
-    """Next predictable match for each tracked club (league or UCL).
+def list_next_open_match_per_league_club(
+    *,
+    now: datetime | None = None,
+) -> list[Match]:
+    """League/UCL matches open for prediction in the next 72 hours.
 
-    Picks the soonest open kickoff across domestic and Champions League.
-    When two tracked clubs play each other, the fixture is listed once.
-    Only calendar fixtures count — stale DB rows (e.g. old Arsenal–PSV) are ignored.
+    Shows every calendar fixture whose kickoff is still upcoming and within
+    PREDICTION_WINDOW_HOURS. Head-to-heads between tracked clubs appear once.
     """
     from league_season import LEAGUE_SEASON_FIXTURES, LEAGUE_TEAMS
 
@@ -1055,25 +1078,22 @@ def list_next_open_match_per_league_club() -> list[Match]:
     seed_league_season_matches()
     sync_match_open_flags()
     allowed = {(f.home, f.away) for f in LEAGUE_SEASON_FIXTURES}
-    open_matches = list_matches(open_only=True, limit=None)
-    by_club: dict[str, Match] = {}
-    for club in LEAGUE_TEAMS:
-        club_matches = [
-            m
-            for m in open_matches
-            if club in (m.home_team, m.away_team)
-            and (m.home_team, m.away_team) in allowed
-        ]
-        club_matches.sort(key=lambda m: (m.kickoff_at or "", m.id))
-        if club_matches:
-            by_club[club] = club_matches[0]
+    league_teams = set(LEAGUE_TEAMS)
+    check = now or datetime.utcnow()
+    open_matches = [
+        m
+        for m in list_matches(open_only=False, limit=None)
+        if (m.home_team, m.away_team) in allowed
+        and (m.home_team in league_teams or m.away_team in league_teams)
+        and match_accepts_predictions(m, now=check)
+    ]
+    open_matches.sort(key=lambda m: (m.kickoff_at or "", m.id))
 
-    # Preserve club order, but drop duplicate head-to-head fixtures.
+    # Drop duplicate head-to-head rows (same pair / same kickoff).
     seen_ids: set[int] = set()
     ordered: list[Match] = []
-    for club in LEAGUE_TEAMS:
-        match = by_club.get(club)
-        if match is None or match.id in seen_ids:
+    for match in open_matches:
+        if match.id in seen_ids:
             continue
         seen_ids.add(match.id)
         ordered.append(match)

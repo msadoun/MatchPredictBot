@@ -3,7 +3,7 @@
 import importlib
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def _fresh_db():
@@ -19,7 +19,7 @@ def _fresh_db():
 
 
 def test_seeded_picker_includes_ucl_when_it_is_next():
-    """If a club's soonest future fixture is UCL, the predict picker shows it."""
+    """If a club's soonest future fixture is UCL and inside 72h, picker shows it."""
     from league_season import (
         CHAMPIONS_LEAGUE_LABEL,
         LEAGUE_TEAMS,
@@ -29,10 +29,12 @@ def test_seeded_picker_includes_ucl_when_it_is_next():
 
     db = _fresh_db()
     db.seed_league_season_matches()
-    matches = db.list_next_open_match_per_league_club()
-    assert matches, "expected open fixtures after season seed"
+    now = datetime(2026, 9, 17, 12, 0, 0)
+    matches = db.list_next_open_match_per_league_club(now=now)
+    assert matches, "expected open fixtures inside the 72h window"
 
-    now = datetime.utcnow()
+    from datetime import timedelta
+
     clubs_with_ucl_next = []
     for club in LEAGUE_TEAMS:
         future = sorted(
@@ -43,7 +45,12 @@ def test_seeded_picker_includes_ucl_when_it_is_next():
             ),
             key=lambda f: f.kickoff_utc,
         )
-        if future and CHAMPIONS_LEAGUE_LABEL in future[0].group:
+        if (
+            future
+            and CHAMPIONS_LEAGUE_LABEL in future[0].group
+            and league_kickoff_datetime(f"{future[0].kickoff_utc} · {future[0].group}")
+            <= now + timedelta(hours=72)
+        ):
             clubs_with_ucl_next.append(club)
 
     if clubs_with_ucl_next:
@@ -67,11 +74,11 @@ def test_seeded_picker_includes_ucl_when_it_is_next():
 def test_head_to_head_between_tracked_clubs_listed_once():
     db = _fresh_db()
     db.seed_league_season_matches()
-    matches = db.list_next_open_match_per_league_club()
+    now = datetime(2026, 9, 17, 12, 0, 0)
+    matches = db.list_next_open_match_per_league_club(now=now)
     ids = [m.id for m in matches]
     assert len(ids) == len(set(ids))
 
-    # Arsenal vs Chelsea is both clubs' next domestic fixture around MD3.
     derby = [
         m
         for m in matches
