@@ -426,6 +426,7 @@ def restore_missing_override_results() -> int:
             """
             SELECT id FROM matches
             WHERE predictions_override = 1
+              AND is_open = 1
               AND (home_score IS NULL OR away_score IS NULL)
             """
         ).fetchall()

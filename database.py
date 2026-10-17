@@ -981,8 +981,9 @@ def match_in_prediction_window(match: Match, *, now: datetime | None = None) -> 
 
 
 def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
+    # Admin /openmatch or /closematch locks is_open; respect that choice.
     if match.predictions_override:
-        return True
+        return bool(match.is_open)
     if match.home_score is not None and match.away_score is not None:
         return False
     if match_has_started(match, now=now):
@@ -1418,9 +1419,10 @@ def migrate_team_names_to_arabic() -> dict[str, int]:
 
 
 def close_match(match_id: int) -> None:
+    """Close predictions and lock against sync_match_open_flags reopening."""
     with get_db() as conn:
         conn.execute(
-            "UPDATE matches SET is_open = 0, predictions_override = 0 WHERE id = ?",
+            "UPDATE matches SET is_open = 0, predictions_override = 1 WHERE id = ?",
             (match_id,),
         )
 
@@ -1466,7 +1468,10 @@ def set_match_result(
     away_team: str | None = None,
 ) -> Match | None:
     existing = get_match(match_id)
-    keep_open = bool(existing and existing.predictions_override)
+    # Keep late predictions open only if admin forced open (not /closematch).
+    keep_open = bool(
+        existing and existing.predictions_override and existing.is_open
+    )
     with get_db() as conn:
         if home_team is not None and away_team is not None:
             conn.execute(
