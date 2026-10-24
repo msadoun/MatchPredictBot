@@ -28,7 +28,6 @@ def test_seven_clubs_feature_in_every_fixture():
 def test_ten_matches_per_club():
     for club in LEAGUE_TEAMS:
         club_fixtures = fixtures_for_club(club)
-        assert len(club_fixtures) == MATCHES_PER_CLUB
         local = [
             f
             for f in club_fixtures
@@ -38,14 +37,22 @@ def test_ten_matches_per_club():
         if club == CHE:
             assert len(local) == MATCHES_PER_CLUB
             assert len(cl) == 0
+            assert len(club_fixtures) == MATCHES_PER_CLUB
+        elif club in LA_LIGA_TEAMS:
+            # MD5–9 plus El Clásico MD10
+            assert len(local) == LOCAL_MATCHES_PER_CLUB + 1
+            assert len(cl) == CL_MATCHES_PER_CLUB
+            assert len(club_fixtures) == MATCHES_PER_CLUB + 1
         else:
             assert len(local) == LOCAL_MATCHES_PER_CLUB
             assert len(cl) == CL_MATCHES_PER_CLUB
+            assert len(club_fixtures) == MATCHES_PER_CLUB
 
 
 def test_total_fixture_count():
-    assert len(LEAGUE_SEASON_FIXTURES) == len(LEAGUE_TEAMS) * MATCHES_PER_CLUB
-    assert len(LOCAL_LEAGUE_FIXTURES) == len(LEAGUE_TEAMS) * LOCAL_MATCHES_PER_CLUB + 5
+    # La Liga clubs each carry Clasico MD10 (+1 each); Chelsea has +5 PL beyond baseline.
+    assert len(LEAGUE_SEASON_FIXTURES) == len(LEAGUE_TEAMS) * MATCHES_PER_CLUB + 2
+    assert len(LOCAL_LEAGUE_FIXTURES) == len(LEAGUE_TEAMS) * LOCAL_MATCHES_PER_CLUB + 5 + 2
     assert len(CHAMPIONS_LEAGUE_FIXTURES) == len(UCL_CLUBS) * CL_MATCHES_PER_CLUB
 
 
@@ -131,8 +138,8 @@ def test_barcelona_levante_jornada_5_official_date():
     assert local[0].kickoff_utc == "2026-09-13T14:15:00"
 
 
-def test_real_madrid_barcelona_md5_to_md9_opponents():
-    """Official La Liga MD5–9 opponents for Real Madrid and Barcelona."""
+def test_real_madrid_barcelona_md5_to_md10_opponents():
+    """Official La Liga MD5–10 opponents including El Clásico."""
     def local_pairs(club: str) -> list[tuple[str, str, str]]:
         local = sorted(
             (
@@ -150,6 +157,7 @@ def test_real_madrid_barcelona_md5_to_md9_opponents():
         ("أتلتيكو مدريد", "ريال مدريد", "2026-09-20T14:15:00"),
         ("ريال مدريد", "فياريال", "2026-10-10T19:00:00"),
         ("ريال مدريد", "إشبيلية", "2026-10-18T19:00:00"),
+        ("برشلونة", "ريال مدريد", "2026-10-25T20:00:00"),
     ]
     assert local_pairs("برشلونة") == [
         ("ليفانتي", "برشلونة", "2026-09-13T14:15:00"),
@@ -157,6 +165,7 @@ def test_real_madrid_barcelona_md5_to_md9_opponents():
         ("إشبيلية", "برشلونة", "2026-09-19T19:00:00"),
         ("برشلونة", "خيتافي", "2026-10-10T16:30:00"),
         ("ريال بيتيس", "برشلونة", "2026-10-18T19:00:00"),
+        ("برشلونة", "ريال مدريد", "2026-10-25T20:00:00"),
     ]
 
 

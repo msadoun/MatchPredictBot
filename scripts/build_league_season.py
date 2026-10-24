@@ -94,13 +94,16 @@ FIXTURES: list[tuple[str, str, str, str, str]] = [
     m("RM", O["ATM"], TEAMS["RM"], kickoff("2026-09-20", "14:15:00"), 7, "laliga"),
     m("RM", TEAMS["RM"], O["VIL"], kickoff("2026-10-10", "19:00:00"), 8, "laliga"),  # Sat 10 Oct 21:00 CEST
     m("RM", TEAMS["RM"], O["SEV"], kickoff("2026-10-18", "19:00:00"), 9, "laliga"),
-    # La Liga — Barcelona (fcbarcelona.com MD5–9 window)
+    # MD10 El Clásico — Camp Nou, Sun 25 Oct 2026 21:00 CET (=20:00 UTC)
+    m("RM", TEAMS["BAR"], TEAMS["RM"], kickoff("2026-10-25", "20:00:00"), 10, "laliga"),
+    # La Liga — Barcelona (fcbarcelona.com MD5–9 window + Clasico MD10)
     # MD5 Levante Sun 13 Sep 16:15; MD6 Racing Wed 16 Sep 21:30; MD7 Sevilla Sat 19 Sep 21:00
     m("BAR", O["LEV"], TEAMS["BAR"], kickoff("2026-09-13", "14:15:00"), 5, "laliga"),
     m("BAR", TEAMS["BAR"], O["RAC"], kickoff("2026-09-16", "19:30:00"), 6, "laliga"),
     m("BAR", O["SEV"], TEAMS["BAR"], kickoff("2026-09-19", "19:00:00"), 7, "laliga"),
     m("BAR", TEAMS["BAR"], O["GET"], kickoff("2026-10-10", "16:30:00"), 8, "laliga"),
     m("BAR", O["BET"], TEAMS["BAR"], kickoff("2026-10-18", "19:00:00"), 9, "laliga"),
+    m("BAR", TEAMS["BAR"], TEAMS["RM"], kickoff("2026-10-25", "20:00:00"), 10, "laliga"),
     # Premier League — GW5–9 window (Sports Mole / club TV updates, mid-Sep 2026)
     # Arsenal: Brighton A · Leeds H · Forest A · Everton H · Liverpool A
     m("ARS", O["BHA"], TEAMS["ARS"], kickoff("2026-09-19", "14:00:00"), 5, "pl"),
