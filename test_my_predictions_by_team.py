@@ -1,4 +1,4 @@
-"""My predictions: team → month → matches in that month."""
+"""My predictions: team → month → matches, with monthly points totals."""
 
 import importlib
 import os
@@ -65,6 +65,7 @@ def test_render_team_month_predictions_filters_by_month():
     assert "سبتمبر 2026" in sep_text
     assert "2-1" in sep_text
     assert "3-0" not in sep_text
+    assert "مجموع النقاط" in sep_text
 
     empty = handlers._render_team_month_predictions_text(
         "ريال مدريد", "2026-11", predictions
@@ -74,14 +75,36 @@ def test_render_team_month_predictions_filters_by_month():
     ) in empty
 
 
-def test_month_keyboard_callbacks_include_team_and_month():
-    db, handlers, _ = _fresh()
+def test_month_keyboard_shows_points_total():
+    db, handlers, msg = _fresh()
     user = db.upsert_user(14, "u4", "User Four")
-    match = db.add_match("تشيلسي", "آرسنال", "2026-09-20T15:30:00")
-    db.save_prediction(user.id, match.id, 1, 1)
+    m1 = db.add_match("تشيلسي", "آرسنال", "2026-09-20T15:30:00")
+    m2 = db.add_match("تشيلسي", "ليفربول", "2026-09-27T15:30:00")
+    db.save_prediction(user.id, m1.id, 1, 1)
+    db.save_prediction(user.id, m2.id, 2, 0)
+    # Exact scores → 3 points each
+    db.set_match_result(m1.id, 1, 1)
+    db.set_match_result(m2.id, 2, 0)
+
     predictions = db.get_user_predictions(user.id)
     months = handlers._months_for_team_predictions(predictions, "تشيلسي")
-    keyboard = handlers._my_predictions_month_keyboard(6, months)
+    keyboard = handlers._my_predictions_month_keyboard(
+        6,
+        months,
+        team="تشيلسي",
+        predictions=predictions,
+    )
+    labels = [btn.text for row in keyboard.inline_keyboard for btn in row]
+    expected = msg.MY_PREDICTIONS_MONTH_BUTTON.format(
+        month="سبتمبر 2026",
+        points=6,
+    )
+    assert expected in labels
     callbacks = [btn.callback_data for row in keyboard.inline_keyboard for btn in row]
     assert "mypred:month:6:2026-09" in callbacks
     assert "mypred:menu" in callbacks
+
+    text = handlers._render_team_month_predictions_text(
+        "تشيلسي", "2026-09", predictions
+    )
+    assert msg.MY_PREDICTIONS_MONTH_POINTS.format(points=6) in text
