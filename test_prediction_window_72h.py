@@ -48,10 +48,7 @@ def test_league_picker_only_lists_matches_in_72h_window():
     # Leeds is weeks away — must not appear yet.
     assert ("أرسنال", "ليدز يونايتد") not in pairs
     for match in matches:
-        if db.match_always_listed_for_predictions(match):
-            assert not db.match_has_started(match, now=now)
-        else:
-            assert db.match_in_prediction_window(match, now=now)
+        assert db.match_in_prediction_window(match, now=now)
 
 
 def test_stale_arsenal_psv_never_shown_even_in_window():
@@ -76,4 +73,5 @@ def test_stale_arsenal_psv_never_shown_even_in_window():
     pairs = {(m.home_team, m.away_team) for m in next_ars}
     assert ("برايتون", "أرسنال") in pairs
     assert ("أرسنال", "بي إس في") not in pairs
-    # Arsenal–Real Madrid (Dec) may also appear because Madrid is always listed.
+    assert ("أرسنال", "ريال مدريد") not in pairs
+    assert len(next_ars) == 1
