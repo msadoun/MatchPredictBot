@@ -45,14 +45,15 @@ def test_rm_barca_accept_predictions_outside_72h():
     assert not db.match_accepts_predictions(pl_far, now=now)
 
 
-def test_picker_always_lists_rm_and_barca_next_matches():
+def test_picker_lists_todays_barca_and_tomorrows_madrid():
     db = _fresh()
     db.seed_league_season_matches()
+    # Sat 31 Oct morning — Barça–Alavés tonight, Racing–Madrid Sunday.
     now = datetime(2026, 10, 31, 6, 0, 0)
     matches = db.list_next_open_match_per_league_club(now=now)
     pairs = {(m.home_team, m.away_team) for m in matches}
-    assert ("برشلونة", "أستون فيلا") in pairs
-    assert ("أيك أثينا", "ريال مدريد") in pairs
+    assert ("برشلونة", "ألافيس") in pairs
+    assert ("راسينغ سانتاندر", "ريال مدريد") in pairs
     barca = [m for m in matches if "برشلونة" in (m.home_team, m.away_team)]
     rm = [m for m in matches if "ريال مدريد" in (m.home_team, m.away_team)]
     assert barca, "Barcelona matches must always appear"

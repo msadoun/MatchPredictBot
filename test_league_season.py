@@ -39,10 +39,10 @@ def test_ten_matches_per_club():
             assert len(cl) == 0
             assert len(club_fixtures) == MATCHES_PER_CLUB
         elif club in LA_LIGA_TEAMS:
-            # MD5–9 plus El Clásico MD10
-            assert len(local) == LOCAL_MATCHES_PER_CLUB + 1
+            # MD5–11 (includes Clasico MD10 + MD11)
+            assert len(local) == LOCAL_MATCHES_PER_CLUB + 2
             assert len(cl) == CL_MATCHES_PER_CLUB
-            assert len(club_fixtures) == MATCHES_PER_CLUB + 1
+            assert len(club_fixtures) == MATCHES_PER_CLUB + 2
         else:
             assert len(local) == LOCAL_MATCHES_PER_CLUB
             assert len(cl) == CL_MATCHES_PER_CLUB
@@ -50,9 +50,9 @@ def test_ten_matches_per_club():
 
 
 def test_total_fixture_count():
-    # La Liga clubs each carry Clasico MD10 (+1 each); Chelsea has +5 PL beyond baseline.
-    assert len(LEAGUE_SEASON_FIXTURES) == len(LEAGUE_TEAMS) * MATCHES_PER_CLUB + 2
-    assert len(LOCAL_LEAGUE_FIXTURES) == len(LEAGUE_TEAMS) * LOCAL_MATCHES_PER_CLUB + 5 + 2
+    # La Liga: +2 each (Clasico MD10 + MD11); Chelsea: +5 PL beyond baseline.
+    assert len(LEAGUE_SEASON_FIXTURES) == len(LEAGUE_TEAMS) * MATCHES_PER_CLUB + 4
+    assert len(LOCAL_LEAGUE_FIXTURES) == len(LEAGUE_TEAMS) * LOCAL_MATCHES_PER_CLUB + 5 + 4
     assert len(CHAMPIONS_LEAGUE_FIXTURES) == len(UCL_CLUBS) * CL_MATCHES_PER_CLUB
 
 
@@ -158,6 +158,7 @@ def test_real_madrid_barcelona_md5_to_md10_opponents():
         ("ريال مدريد", "فياريال", "2026-10-10T19:00:00"),
         ("ريال مدريد", "إشبيلية", "2026-10-18T19:00:00"),
         ("برشلونة", "ريال مدريد", "2026-10-25T20:00:00"),
+        ("راسينغ سانتاندر", "ريال مدريد", "2026-11-01T14:15:00"),
     ]
     assert local_pairs("برشلونة") == [
         ("ليفانتي", "برشلونة", "2026-09-13T14:15:00"),
@@ -166,6 +167,7 @@ def test_real_madrid_barcelona_md5_to_md10_opponents():
         ("برشلونة", "خيتافي", "2026-10-10T16:30:00"),
         ("ريال بيتيس", "برشلونة", "2026-10-18T19:00:00"),
         ("برشلونة", "ريال مدريد", "2026-10-25T20:00:00"),
+        ("برشلونة", "ألافيس", "2026-10-31T20:00:00"),
     ]
 
 
