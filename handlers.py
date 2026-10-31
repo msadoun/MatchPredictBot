@@ -1647,16 +1647,37 @@ def _predictions_for_team_month(
     ]
 
 
+def _total_points_for_predictions(
+    predictions: list[tuple[db.Prediction, db.Match]],
+) -> int:
+    total = 0
+    for prediction, _match in predictions:
+        if prediction.points is not None:
+            total += int(prediction.points)
+    return total
+
+
 def _my_predictions_month_keyboard(
     team_index: int,
     months: list[str],
+    *,
+    team: str,
+    predictions: list[tuple[db.Prediction, db.Match]],
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     for year_month in months:
+        month_predictions = _predictions_for_team_month(
+            predictions, team, year_month
+        )
+        points = _total_points_for_predictions(month_predictions)
+        label = msg.MY_PREDICTIONS_MONTH_BUTTON.format(
+            month=_format_year_month_label(year_month),
+            points=points,
+        )
         rows.append(
             [
                 InlineKeyboardButton(
-                    _format_year_month_label(year_month),
+                    label,
                     callback_data=f"mypred:month:{team_index}:{year_month}",
                 )
             ]
@@ -1728,17 +1749,19 @@ def _render_team_month_predictions_text(
     from knockout_teams import resolved_knockout_display_map
 
     month_label = _format_year_month_label(year_month)
-    header = msg.MY_PREDICTIONS_MONTH_HEADER.format(team=team, month=month_label)
     month_predictions = _predictions_for_team_month(predictions, team, year_month)
+    points = _total_points_for_predictions(month_predictions)
+    header = msg.MY_PREDICTIONS_MONTH_HEADER.format(team=team, month=month_label)
+    points_line = msg.MY_PREDICTIONS_MONTH_POINTS.format(points=points)
     if not month_predictions:
         return (
-            f"{header}\n\n"
+            f"{header}\n{points_line}\n\n"
             f"{msg.MY_PREDICTIONS_MONTH_EMPTY.format(team=team, month=month_label)}"
         )
 
     matches = [match for _, match in month_predictions]
     display_map = resolved_knockout_display_map(matches)
-    lines = [header, msg.SCORING_RULES]
+    lines = [header, points_line, msg.SCORING_RULES]
     for prediction, match in month_predictions:
         lines.append(
             _format_user_prediction_block(
@@ -1776,7 +1799,12 @@ async def _show_my_predictions_months(
         )
     else:
         text = msg.MY_PREDICTIONS_PICK_MONTH.format(team=team)
-        markup = _my_predictions_month_keyboard(team_index, months)
+        markup = _my_predictions_month_keyboard(
+            team_index,
+            months,
+            team=team,
+            predictions=predictions,
+        )
 
     if edit:
         await edit_or_send_user(
