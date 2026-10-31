@@ -980,6 +980,14 @@ def match_in_prediction_window(match: Match, *, now: datetime | None = None) -> 
     return kickoff <= check + timedelta(hours=PREDICTION_WINDOW_HOURS)
 
 
+def match_always_listed_for_predictions(match: Match) -> bool:
+    """Real Madrid and Barcelona fixtures stay visible until kickoff (no 72h gate)."""
+    from league_season import LA_LIGA_TEAMS
+
+    always = set(LA_LIGA_TEAMS)
+    return match.home_team in always or match.away_team in always
+
+
 def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
     # Admin /openmatch or /closematch locks is_open; respect that choice.
     if match.predictions_override:
@@ -988,10 +996,18 @@ def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> b
         return False
     if match_has_started(match, now=now):
         return False
-    if not match_in_prediction_window(match, now=now):
-        return False
+    # La Liga tracked clubs (Real Madrid, Barcelona) are always open until kickoff.
+    if not match_always_listed_for_predictions(match):
+        if not match_in_prediction_window(match, now=now):
+            return False
+    else:
+        from worldcup2026 import safe_kickoff_datetime
+
+        kickoff = safe_kickoff_datetime(match.kickoff_at)
+        if kickoff is None:
+            return False
     # `is_open` is synced to wall-clock kickoff. When `now` is injected (tests /
-    # simulation), trust kickoff + 72h window only.
+    # simulation), trust kickoff + window rules above.
     if now is None and not match.is_open:
         return False
     return True
@@ -1068,10 +1084,11 @@ def list_next_open_match_per_league_club(
     *,
     now: datetime | None = None,
 ) -> list[Match]:
-    """League/UCL matches open for prediction in the next 72 hours.
+    """League/UCL matches open for prediction.
 
-    Shows every calendar fixture whose kickoff is still upcoming and within
-    PREDICTION_WINDOW_HOURS. Head-to-heads between tracked clubs appear once.
+    Most clubs: only fixtures inside PREDICTION_WINDOW_HOURS (72h).
+    Real Madrid and Barcelona: every upcoming open fixture (always listed).
+    Head-to-heads between tracked clubs appear once.
     """
     from league_season import LEAGUE_SEASON_FIXTURES, LEAGUE_TEAMS
 
