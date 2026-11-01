@@ -1560,19 +1560,8 @@ async def predict_score_message(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 
-def _my_predictions_team_keyboard() -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    for index, team in enumerate(reports.list_league_teams()):
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    team,
-                    callback_data=f"mypred:team:{index}",
-                )
-            ]
-        )
-    rows.append(_main_menu_back_row())
-    return InlineKeyboardMarkup(rows)
+# Latest predicted match(es) per league team on the main "my predictions" screen.
+RECENT_PREDICTIONS_PER_TEAM = 1
 
 
 _ARABIC_MONTHS = (
@@ -1623,12 +1612,84 @@ def _predictions_for_team(
     ]
 
 
+def _prediction_kickoff_key(item: tuple[db.Prediction, db.Match]) -> str:
+    return item[1].kickoff_at or ""
+
+
+def _recent_predictions_for_team(
+    predictions: list[tuple[db.Prediction, db.Match]],
+    team: str,
+    *,
+    limit: int = RECENT_PREDICTIONS_PER_TEAM,
+) -> list[tuple[db.Prediction, db.Match]]:
+    team_predictions = sorted(
+        _predictions_for_team(predictions, team),
+        key=_prediction_kickoff_key,
+        reverse=True,
+    )
+    return team_predictions[: max(0, limit)]
+
+
+def _archive_predictions_for_team(
+    predictions: list[tuple[db.Prediction, db.Match]],
+    team: str,
+    *,
+    recent_limit: int = RECENT_PREDICTIONS_PER_TEAM,
+) -> list[tuple[db.Prediction, db.Match]]:
+    recent_ids = {
+        prediction.id
+        for prediction, _ in _recent_predictions_for_team(
+            predictions, team, limit=recent_limit
+        )
+    }
+    return [
+        (prediction, match)
+        for prediction, match in _predictions_for_team(predictions, team)
+        if prediction.id not in recent_ids
+    ]
+
+
+def _recent_predictions_by_team(
+    predictions: list[tuple[db.Prediction, db.Match]],
+    *,
+    limit: int = RECENT_PREDICTIONS_PER_TEAM,
+) -> list[tuple[str, list[tuple[db.Prediction, db.Match]]]]:
+    grouped: list[tuple[str, list[tuple[db.Prediction, db.Match]]]] = []
+    for team in reports.list_league_teams():
+        recent = _recent_predictions_for_team(predictions, team, limit=limit)
+        if recent:
+            grouped.append((team, recent))
+    return grouped
+
+
+def _archive_teams_with_predictions(
+    predictions: list[tuple[db.Prediction, db.Match]],
+) -> list[tuple[int, str]]:
+    teams: list[tuple[int, str]] = []
+    for index, team in enumerate(reports.list_league_teams()):
+        if _archive_predictions_for_team(predictions, team):
+            teams.append((index, team))
+    return teams
+
+
 def _months_for_team_predictions(
     predictions: list[tuple[db.Prediction, db.Match]],
     team: str,
 ) -> list[str]:
     months: set[str] = set()
     for _, match in _predictions_for_team(predictions, team):
+        year_month = _match_year_month(match.kickoff_at)
+        if year_month:
+            months.add(year_month)
+    return sorted(months)
+
+
+def _months_for_archive_team(
+    predictions: list[tuple[db.Prediction, db.Match]],
+    team: str,
+) -> list[str]:
+    months: set[str] = set()
+    for _, match in _archive_predictions_for_team(predictions, team):
         year_month = _match_year_month(match.kickoff_at)
         if year_month:
             months.add(year_month)
@@ -1645,6 +1706,43 @@ def _predictions_for_team_month(
         for prediction, match in _predictions_for_team(predictions, team)
         if _match_year_month(match.kickoff_at) == year_month
     ]
+
+
+def _archive_predictions_for_team_month(
+    predictions: list[tuple[db.Prediction, db.Match]],
+    team: str,
+    year_month: str,
+) -> list[tuple[db.Prediction, db.Match]]:
+    return [
+        (prediction, match)
+        for prediction, match in _archive_predictions_for_team(predictions, team)
+        if _match_year_month(match.kickoff_at) == year_month
+    ]
+
+
+def _my_predictions_archive_team_keyboard(
+    predictions: list[tuple[db.Prediction, db.Match]],
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for index, team in _archive_teams_with_predictions(predictions):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    team,
+                    callback_data=f"mypred:team:{index}",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                msg.MY_PREDICTIONS_BTN_RECENT,
+                callback_data="mypred:menu",
+            )
+        ]
+    )
+    rows.append(_main_menu_back_row())
+    return InlineKeyboardMarkup(rows)
 
 
 def _my_predictions_month_keyboard(
@@ -1665,6 +1763,14 @@ def _my_predictions_month_keyboard(
         [
             InlineKeyboardButton(
                 msg.MY_PREDICTIONS_BTN_TEAMS,
+                callback_data="mypred:archive",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                msg.MY_PREDICTIONS_BTN_RECENT,
                 callback_data="mypred:menu",
             )
         ]
@@ -1685,7 +1791,27 @@ def _my_predictions_month_nav_keyboard(team_index: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     msg.MY_PREDICTIONS_BTN_TEAMS,
+                    callback_data="mypred:archive",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    msg.MY_PREDICTIONS_BTN_RECENT,
                     callback_data="mypred:menu",
+                )
+            ],
+            _main_menu_back_row(),
+        ]
+    )
+
+
+def _my_predictions_recent_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    msg.MY_PREDICTIONS_BTN_ARCHIVE,
+                    callback_data="mypred:archive",
                 )
             ],
             _main_menu_back_row(),
@@ -1720,7 +1846,30 @@ def _format_user_prediction_block(
     return line
 
 
-def _render_team_month_predictions_text(
+def _render_recent_predictions_text(
+    predictions: list[tuple[db.Prediction, db.Match]],
+) -> str:
+    from knockout_teams import resolved_knockout_display_map
+
+    grouped = _recent_predictions_by_team(predictions)
+    if not grouped:
+        return msg.NO_PREDICTIONS
+
+    all_matches = [match for _, items in grouped for _, match in items]
+    display_map = resolved_knockout_display_map(all_matches)
+    lines = [msg.MY_PREDICTIONS_RECENT_HEADER, msg.SCORING_RULES]
+    for team, items in grouped:
+        lines.append(msg.MY_PREDICTIONS_RECENT_TEAM.format(team=team))
+        for prediction, match in items:
+            lines.append(
+                _format_user_prediction_block(
+                    prediction, match, display_map=display_map
+                )
+            )
+    return "\n\n".join(lines)
+
+
+def _render_archive_month_predictions_text(
     team: str,
     year_month: str,
     predictions: list[tuple[db.Prediction, db.Match]],
@@ -1729,7 +1878,9 @@ def _render_team_month_predictions_text(
 
     month_label = _format_year_month_label(year_month)
     header = msg.MY_PREDICTIONS_MONTH_HEADER.format(team=team, month=month_label)
-    month_predictions = _predictions_for_team_month(predictions, team, year_month)
+    month_predictions = _archive_predictions_for_team_month(
+        predictions, team, year_month
+    )
     if not month_predictions:
         return (
             f"{header}\n\n"
@@ -1748,6 +1899,83 @@ def _render_team_month_predictions_text(
     return "\n\n".join(lines)
 
 
+# Backward-compatible alias used by older tests.
+def _render_team_month_predictions_text(
+    team: str,
+    year_month: str,
+    predictions: list[tuple[db.Prediction, db.Match]],
+) -> str:
+    return _render_archive_month_predictions_text(team, year_month, predictions)
+
+
+async def _show_my_predictions_recent(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    predictions: list[tuple[db.Prediction, db.Match]],
+    edit: bool,
+) -> None:
+    text = _render_recent_predictions_text(predictions)
+    markup = _my_predictions_recent_keyboard()
+    if edit:
+        await edit_or_send_user(
+            update,
+            context,
+            text,
+            markup,
+            bot_username=BOT_USERNAME,
+        )
+    else:
+        await menu_screen_response(
+            update,
+            context,
+            text,
+            reply_markup=markup,
+        )
+
+
+async def _show_my_predictions_archive_teams(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    predictions: list[tuple[db.Prediction, db.Match]],
+    edit: bool,
+) -> None:
+    archive_teams = _archive_teams_with_predictions(predictions)
+    if not archive_teams:
+        text = msg.MY_PREDICTIONS_ARCHIVE_EMPTY
+        markup = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        msg.MY_PREDICTIONS_BTN_RECENT,
+                        callback_data="mypred:menu",
+                    )
+                ],
+                _main_menu_back_row(),
+            ]
+        )
+    else:
+        text = msg.MY_PREDICTIONS_ARCHIVE_PICK_TEAM
+        markup = _my_predictions_archive_team_keyboard(predictions)
+
+    if edit:
+        await edit_or_send_user(
+            update,
+            context,
+            text,
+            markup,
+            bot_username=BOT_USERNAME,
+        )
+    else:
+        await menu_screen_response(
+            update,
+            context,
+            text,
+            reply_markup=markup,
+        )
+
+
 async def _show_my_predictions_months(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1757,17 +1985,23 @@ async def _show_my_predictions_months(
     predictions: list[tuple[db.Prediction, db.Match]],
     edit: bool,
 ) -> None:
-    months = _months_for_team_predictions(predictions, team)
+    months = _months_for_archive_team(predictions, team)
     if not months:
         text = (
             f"{msg.MY_PREDICTIONS_TEAM_HEADER.format(team=team)}\n\n"
-            f"{msg.MY_PREDICTIONS_TEAM_EMPTY.format(team=team)}"
+            f"{msg.MY_PREDICTIONS_ARCHIVE_TEAM_EMPTY.format(team=team)}"
         )
         markup = InlineKeyboardMarkup(
             [
                 [
                     InlineKeyboardButton(
                         msg.MY_PREDICTIONS_BTN_TEAMS,
+                        callback_data="mypred:archive",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        msg.MY_PREDICTIONS_BTN_RECENT,
                         callback_data="mypred:menu",
                     )
                 ],
@@ -1775,7 +2009,7 @@ async def _show_my_predictions_months(
             ]
         )
     else:
-        text = msg.MY_PREDICTIONS_PICK_MONTH.format(team=team)
+        text = msg.MY_PREDICTIONS_ARCHIVE_PICK_MONTH.format(team=team)
         markup = _my_predictions_month_keyboard(team_index, months)
 
     if edit:
@@ -1816,11 +2050,11 @@ async def my_predictions_command(
         await menu_screen_response(update, context, msg.NO_PREDICTIONS)
         return
 
-    await menu_screen_response(
+    await _show_my_predictions_recent(
         update,
         context,
-        msg.MY_PREDICTIONS_PICK_TEAM,
-        reply_markup=_my_predictions_team_keyboard(),
+        predictions=predictions,
+        edit=False,
     )
 
 
@@ -1858,12 +2092,20 @@ async def my_predictions_callback(
                 bot_username=BOT_USERNAME,
             )
             return
-        await edit_or_send_user(
+        await _show_my_predictions_recent(
             update,
             context,
-            msg.MY_PREDICTIONS_PICK_TEAM,
-            _my_predictions_team_keyboard(),
-            bot_username=BOT_USERNAME,
+            predictions=predictions,
+            edit=True,
+        )
+        return
+
+    if action == "archive":
+        await _show_my_predictions_archive_teams(
+            update,
+            context,
+            predictions=predictions,
+            edit=True,
         )
         return
 
@@ -1894,7 +2136,7 @@ async def my_predictions_callback(
         year_month = parts[3]
         if not team or _match_year_month(f"{year_month}-01") != year_month:
             return
-        text = _render_team_month_predictions_text(team, year_month, predictions)
+        text = _render_archive_month_predictions_text(team, year_month, predictions)
         await edit_or_send_user(
             update,
             context,
