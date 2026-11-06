@@ -39,20 +39,25 @@ def test_ten_matches_per_club():
             assert len(cl) == 0
             assert len(club_fixtures) == MATCHES_PER_CLUB
         elif club in LA_LIGA_TEAMS:
-            # MD5–11 (includes Clasico MD10 + MD11)
+            # MD5–13 (Clasico + MD11–13)
+            assert len(local) == LOCAL_MATCHES_PER_CLUB + 4
+            assert len(cl) == CL_MATCHES_PER_CLUB
+            assert len(club_fixtures) == MATCHES_PER_CLUB + 4
+        else:
+            # GW5–11 domestic (+2 beyond baseline five)
             assert len(local) == LOCAL_MATCHES_PER_CLUB + 2
             assert len(cl) == CL_MATCHES_PER_CLUB
             assert len(club_fixtures) == MATCHES_PER_CLUB + 2
-        else:
-            assert len(local) == LOCAL_MATCHES_PER_CLUB
-            assert len(cl) == CL_MATCHES_PER_CLUB
-            assert len(club_fixtures) == MATCHES_PER_CLUB
 
 
 def test_total_fixture_count():
-    # La Liga: +2 each (Clasico MD10 + MD11); Chelsea: +5 PL beyond baseline.
-    assert len(LEAGUE_SEASON_FIXTURES) == len(LEAGUE_TEAMS) * MATCHES_PER_CLUB + 4
-    assert len(LOCAL_LEAGUE_FIXTURES) == len(LEAGUE_TEAMS) * LOCAL_MATCHES_PER_CLUB + 5 + 4
+    # La Liga +4 each; PL UCL clubs +2 each; Chelsea baseline 10 (= +5 over LOCAL_MATCHES).
+    assert len(LEAGUE_SEASON_FIXTURES) == (
+        len(LEAGUE_TEAMS) * MATCHES_PER_CLUB + 4 * 2 + 2 * 4
+    )
+    assert len(LOCAL_LEAGUE_FIXTURES) == (
+        len(LEAGUE_TEAMS) * LOCAL_MATCHES_PER_CLUB + 5 + 4 * 2 + 2 * 4
+    )
     assert len(CHAMPIONS_LEAGUE_FIXTURES) == len(UCL_CLUBS) * CL_MATCHES_PER_CLUB
 
 
@@ -159,6 +164,8 @@ def test_real_madrid_barcelona_md5_to_md10_opponents():
         ("ريال مدريد", "إشبيلية", "2026-10-18T19:00:00"),
         ("برشلونة", "ريال مدريد", "2026-10-25T20:00:00"),
         ("راسينغ سانتاندر", "ريال مدريد", "2026-11-01T14:15:00"),
+        ("فالنسيا", "ريال مدريد", "2026-11-07T19:00:00"),
+        ("ريال مدريد", "سيلتا", "2026-11-21T19:00:00"),
     ]
     assert local_pairs("برشلونة") == [
         ("ليفانتي", "برشلونة", "2026-09-13T14:15:00"),
@@ -168,6 +175,8 @@ def test_real_madrid_barcelona_md5_to_md10_opponents():
         ("ريال بيتيس", "برشلونة", "2026-10-18T19:00:00"),
         ("برشلونة", "ريال مدريد", "2026-10-25T20:00:00"),
         ("برشلونة", "ألافيس", "2026-10-31T20:00:00"),
+        ("أتلتيكو مدريد", "برشلونة", "2026-11-08T19:00:00"),
+        ("برشلونة", "فياريال", "2026-11-22T13:00:00"),
     ]
 
 
@@ -190,6 +199,8 @@ def test_premier_league_gw5_window_opponents():
         ("نوتنغهام فورست", "أرسنال", "2026-10-18T15:30:00"),
         ("أرسنال", "إيفرتون", "2026-10-24T14:00:00"),
         ("ليفربول", "أرسنال", "2026-11-01T16:30:00"),
+        ("أرسنال", "هال", "2026-11-07T15:00:00"),
+        ("نيوكاسل", "أرسنال", "2026-11-21T17:30:00"),
     ]
     assert local_pairs("مانشستر يونايتد")[:5] == [
         ("فولهام", "مانشستر يونايتد", "2026-09-20T15:30:00"),
@@ -198,24 +209,22 @@ def test_premier_league_gw5_window_opponents():
         ("مانشستر يونايتد", "بورنموث", "2026-10-25T14:00:00"),
         ("تشيلسي", "مانشستر يونايتد", "2026-10-31T12:30:00"),
     ]
-    assert local_pairs("مانشستر سيتي") == [
-        ("مانشستر سيتي", "ساندرلاند", "2026-09-20T13:00:00"),
-        ("ليفربول", "مانشستر سيتي", "2026-10-11T15:30:00"),
-        ("مانشستر سيتي", "إبسويتش", "2026-10-17T14:00:00"),
-        ("أستون فيلا", "مانشستر سيتي", "2026-10-24T11:30:00"),
-        ("مانشستر سيتي", "برايتون", "2026-10-31T15:00:00"),
+    assert ("مانشستر يونايتد", "أستون فيلا", "2026-11-08T16:30:00") in local_pairs(
+        "مانشستر يونايتد"
+    )
+    assert local_pairs("مانشستر سيتي")[-2:] == [
+        ("نوتنغهام فورست", "مانشستر سيتي", "2026-11-07T17:30:00"),
+        ("مانشستر سيتي", "فولهام", "2026-11-21T12:30:00"),
     ]
-    assert local_pairs("ليفربول") == [
-        ("بورنموث", "ليفربول", "2026-09-20T13:00:00"),
-        ("ليفربول", "مانشستر سيتي", "2026-10-11T15:30:00"),
-        ("برنتفورد", "ليفربول", "2026-10-17T14:00:00"),
-        ("ليفربول", "برايتون", "2026-10-25T14:00:00"),
-        ("ليفربول", "أرسنال", "2026-11-01T16:30:00"),
+    assert local_pairs("ليفربول")[-2:] == [
+        ("كريستال بالاس", "ليفربول", "2026-11-08T14:00:00"),
+        ("ليفربول", "مانشستر يونايتد", "2026-11-22T16:30:00"),
     ]
     che = local_pairs("تشيلسي")
     assert len(che) == 10
     assert che[0] == ("برنتفورد", "تشيلسي", "2026-09-18T19:00:00")
-    assert che[5] == ("ساندرلاند", "تشيلسي", "2026-11-07T15:00:00")
+    assert che[5] == ("ساندرلاند", "تشيلسي", "2026-11-08T14:00:00")
+    assert che[7] == ("نوتنغهام فورست", "تشيلسي", "2026-11-27T20:00:00")
     assert che[9] == ("مانشستر سيتي", "تشيلسي", "2026-12-12T15:00:00")
 
 
@@ -242,12 +251,13 @@ def test_ucl_md2_window_after_mid_september():
 def test_arsenal_upcoming_window_opponents():
     """Arsenal PL + UCL window after MD1: Brighton through Real Madrid."""
     fixtures = sorted(fixtures_for_club("أرسنال"), key=lambda f: f.kickoff_utc)
-    assert len(fixtures) == 10
+    assert len(fixtures) == 12  # GW5–11 PL + UCL MD2–6
     assert (fixtures[0].home, fixtures[0].away) == ("برايتون", "أرسنال")
     assert fixtures[0].kickoff_utc.startswith("2026-09-19")
     assert not any({f.home, f.away} == {"نابولي", "أرسنال"} for f in fixtures)
     assert (fixtures[-1].home, fixtures[-1].away) == ("أرسنال", "ريال مدريد")
     assert fixtures[-1].kickoff_utc.startswith("2026-12-09")
+    assert any(f.away == "هال" for f in fixtures)
     slavia = [f for f in fixtures if "سلافيا" in f.home or "سلافيا" in f.away]
     assert len(slavia) == 1
     assert slavia[0].home == "سلافيا براغ"
