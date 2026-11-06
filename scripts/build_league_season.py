@@ -72,6 +72,7 @@ O = {
     "RAC": "\u0631\u0627\u0633\u064a\u0646\u063a \u0633\u0627\u0646\u062a\u0627\u0646\u062f\u0631",
     "SEV": "\u0625\u0634\u0628\u064a\u0644\u064a\u0629",
     "ALA": "\u0623\u0644\u0627\u0641\u064a\u0633",
+    "CEL": "\u0633\u064a\u0644\u062a\u0627",
 }
 
 
@@ -109,40 +110,49 @@ FIXTURES: list[tuple[str, str, str, str, str]] = [
     m("BAR", TEAMS["BAR"], TEAMS["RM"], kickoff("2026-10-25", "20:00:00"), 10, "laliga"),
     # MD11 — Barça–Alavés Sat 31 Oct 21:00 CET (=20:00 UTC)
     m("BAR", TEAMS["BAR"], O["ALA"], kickoff("2026-10-31", "20:00:00"), 11, "laliga"),
-    # Premier League — GW5–9 window (Sports Mole / club TV updates, mid-Sep 2026)
-    # Arsenal: Brighton A · Leeds H · Forest A · Everton H · Liverpool A
+    # MD12–13 — Valencia–Madrid Sat 7 Nov 21:00 CET; Atleti–Barça Sun 8 Nov 21:00 CET
+    m("RM", O["VAL"], TEAMS["RM"], kickoff("2026-11-07", "19:00:00"), 12, "laliga"),
+    m("RM", TEAMS["RM"], O["CEL"], kickoff("2026-11-21", "19:00:00"), 13, "laliga"),
+    m("BAR", O["ATM"], TEAMS["BAR"], kickoff("2026-11-08", "19:00:00"), 12, "laliga"),
+    m("BAR", TEAMS["BAR"], O["VIL"], kickoff("2026-11-22", "13:00:00"), 13, "laliga"),
+    # Premier League — GW5–11 (official Nov broadcast list)
     m("ARS", O["BHA"], TEAMS["ARS"], kickoff("2026-09-19", "14:00:00"), 5, "pl"),
     m("ARS", TEAMS["ARS"], O["LEE"], kickoff("2026-10-10", "11:30:00"), 6, "pl"),
     m("ARS", O["NFO"], TEAMS["ARS"], kickoff("2026-10-18", "15:30:00"), 7, "pl"),
     m("ARS", TEAMS["ARS"], O["EVE"], kickoff("2026-10-24", "14:00:00"), 8, "pl"),
     m("ARS", TEAMS["LIV"], TEAMS["ARS"], kickoff("2026-11-01", "16:30:00"), 9, "pl"),
-    # Man United: Fulham A · Spurs H · Leeds A · Bournemouth H · Chelsea A
+    m("ARS", TEAMS["ARS"], O["HUL"], kickoff("2026-11-07", "15:00:00"), 10, "pl"),
+    m("ARS", O["NEW"], TEAMS["ARS"], kickoff("2026-11-21", "17:30:00"), 11, "pl"),
     m("MU", O["FUL"], TEAMS["MU"], kickoff("2026-09-20", "15:30:00"), 5, "pl"),
     m("MU", TEAMS["MU"], O["TOT"], kickoff("2026-10-10", "16:30:00"), 6, "pl"),
     m("MU", O["LEE"], TEAMS["MU"], kickoff("2026-10-18", "13:00:00"), 7, "pl"),
     m("MU", TEAMS["MU"], O["BOU"], kickoff("2026-10-25", "14:00:00"), 8, "pl"),
     m("MU", TEAMS["CHE"], TEAMS["MU"], kickoff("2026-10-31", "12:30:00"), 9, "pl"),
-    # Man City: Sunderland H (moved to Sun 20 Sep 14:00 BST / PL) · Liverpool A · Ipswich H · Villa A · Brighton H
+    m("MU", TEAMS["MU"], O["AVL"], kickoff("2026-11-08", "16:30:00"), 10, "pl"),
+    m("MU", TEAMS["LIV"], TEAMS["MU"], kickoff("2026-11-22", "16:30:00"), 11, "pl"),
     m("MC", TEAMS["MC"], O["SUN"], kickoff("2026-09-20", "13:00:00"), 5, "pl"),
     m("MC", TEAMS["LIV"], TEAMS["MC"], kickoff("2026-10-11", "15:30:00"), 6, "pl"),
     m("MC", TEAMS["MC"], O["IPS"], kickoff("2026-10-17", "14:00:00"), 7, "pl"),
     m("MC", O["AVL"], TEAMS["MC"], kickoff("2026-10-24", "11:30:00"), 8, "pl"),
     m("MC", TEAMS["MC"], O["BHA"], kickoff("2026-10-31", "15:00:00"), 9, "pl"),
-    # Liverpool: Bournemouth A · City H · Brentford A · Brighton H · Arsenal H
+    m("MC", O["NFO"], TEAMS["MC"], kickoff("2026-11-07", "17:30:00"), 10, "pl"),
+    m("MC", TEAMS["MC"], O["FUL"], kickoff("2026-11-21", "12:30:00"), 11, "pl"),
     m("LIV", O["BOU"], TEAMS["LIV"], kickoff("2026-09-20", "13:00:00"), 5, "pl"),
     m("LIV", TEAMS["LIV"], TEAMS["MC"], kickoff("2026-10-11", "15:30:00"), 6, "pl"),
     m("LIV", O["BRE"], TEAMS["LIV"], kickoff("2026-10-17", "14:00:00"), 7, "pl"),
     m("LIV", TEAMS["LIV"], O["BHA"], kickoff("2026-10-25", "14:00:00"), 8, "pl"),
     m("LIV", TEAMS["LIV"], TEAMS["ARS"], kickoff("2026-11-01", "16:30:00"), 9, "pl"),
-    # Chelsea — no UCL; next 10 PL (GW5–14). Nov 7 is Sunderland A, not Forest.
+    m("LIV", O["CRY"], TEAMS["LIV"], kickoff("2026-11-08", "14:00:00"), 10, "pl"),
+    m("LIV", TEAMS["LIV"], TEAMS["MU"], kickoff("2026-11-22", "16:30:00"), 11, "pl"),
+    # Chelsea — no UCL; GW5–14. Sunderland A Sun 8 Nov 14:00; Forest A Fri 27 Nov 20:00
     m("CHE", O["BRE"], TEAMS["CHE"], kickoff("2026-09-18", "19:00:00"), 5, "pl"),
     m("CHE", TEAMS["CHE"], O["BOU"], kickoff("2026-10-10", "14:00:00"), 6, "pl"),
     m("CHE", O["EVE"], TEAMS["CHE"], kickoff("2026-10-17", "11:30:00"), 7, "pl"),
     m("CHE", TEAMS["CHE"], O["TOT"], kickoff("2026-10-24", "16:30:00"), 8, "pl"),
     m("CHE", TEAMS["CHE"], TEAMS["MU"], kickoff("2026-10-31", "12:30:00"), 9, "pl"),
-    m("CHE", O["SUN"], TEAMS["CHE"], kickoff("2026-11-07", "15:00:00"), 10, "pl"),
+    m("CHE", O["SUN"], TEAMS["CHE"], kickoff("2026-11-08", "14:00:00"), 10, "pl"),
     m("CHE", TEAMS["CHE"], O["LEE"], kickoff("2026-11-21", "15:00:00"), 11, "pl"),
-    m("CHE", O["NFO"], TEAMS["CHE"], kickoff("2026-11-28", "15:00:00"), 12, "pl"),
+    m("CHE", O["NFO"], TEAMS["CHE"], kickoff("2026-11-27", "20:00:00"), 12, "pl"),
     m("CHE", TEAMS["CHE"], TEAMS["LIV"], kickoff("2026-12-05", "15:00:00"), 13, "pl"),
     m("CHE", TEAMS["MC"], TEAMS["CHE"], kickoff("2026-12-12", "15:00:00"), 14, "pl"),
     # Champions League — MD2–6 window (MD1 already played by mid-Sep 2026)
