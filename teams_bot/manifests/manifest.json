@@ -1,0 +1,46 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "YOUR_BOT_APP_ID",
+  "developer": {
+    "name": "EID Schedule",
+    "websiteUrl": "https://example.com",
+    "privacyUrl": "https://example.com/privacy",
+    "termsOfUseUrl": "https://example.com/terms"
+  },
+  "name": {
+    "short": "EID Schedule",
+    "full": "EID Schedule Bot"
+  },
+  "description": {
+    "short": "Shows today's EID hours for UAE emirates",
+    "full": "Type /date to get today's EID opening hours for Abu Dhabi, Sharjah, Ajman, and Dubai."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#C4A35A",
+  "bots": [
+    {
+      "botId": "YOUR_BOT_APP_ID",
+      "scopes": ["personal", "team", "groupChat"],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["personal", "team", "groupChat"],
+          "commands": [
+            {
+              "title": "date",
+              "description": "Show today's EID schedule by emirate"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": []
+}
