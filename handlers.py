@@ -2781,8 +2781,61 @@ async def _send_admin_report_document(
     return True
 
 
+def _admin_available_matches(
+    *,
+    now: datetime | None = None,
+) -> list[db.Match]:
+    """Matches currently inside the 72h prediction window (same as user picker)."""
+    return db.list_next_open_match_per_league_club(now=now)
+
+
+def _admin_archive_matches_for_team(
+    team: str,
+    *,
+    now: datetime | None = None,
+) -> list[db.Match]:
+    available_ids = {match.id for match in _admin_available_matches(now=now)}
+    return [
+        match
+        for match in reports.matches_for_scope("team", team)
+        if match.id not in available_ids
+    ]
+
+
+def _admin_archive_teams(
+    *,
+    now: datetime | None = None,
+) -> list[tuple[int, str]]:
+    teams: list[tuple[int, str]] = []
+    for index, team in enumerate(reports.list_league_teams()):
+        if _admin_archive_matches_for_team(team, now=now):
+            teams.append((index, team))
+    return teams
+
+
 def _admin_match_photo_team_keyboard() -> InlineKeyboardMarkup:
-    return _admin_team_picker_keyboard(callback_prefix="adminpred:phototeam")
+    rows: list[list[InlineKeyboardButton]] = []
+    for index, team in _admin_archive_teams():
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    team,
+                    callback_data=f"adminpred:phototeam:{index}",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                msg.ADMIN_MATCH_TABLE_BTN_AVAILABLE,
+                callback_data="adminpred:photopick",
+            )
+        ]
+    )
+    rows.append(
+        [InlineKeyboardButton(msg.ADMIN_PREDICTIONS_BTN_BACK, callback_data="adminpred:menu")]
+    )
+    return InlineKeyboardMarkup(rows)
 
 
 def _months_for_matches(matches: list[db.Match]) -> list[str]:
@@ -2820,6 +2873,14 @@ def _admin_match_table_month_keyboard(
         [
             InlineKeyboardButton(
                 msg.ADMIN_MATCH_TABLE_BTN_TEAMS,
+                callback_data="adminpred:photoarchive",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                msg.ADMIN_MATCH_TABLE_BTN_AVAILABLE,
                 callback_data="adminpred:photopick",
             )
         ]
@@ -2831,6 +2892,7 @@ def _admin_match_photo_picker_keyboard(
     matches: list[db.Match],
     *,
     team_index: int | None = None,
+    available: bool = False,
 ) -> InlineKeyboardMarkup:
     from knockout_teams import resolved_knockout_display_map
 
@@ -2849,14 +2911,97 @@ def _admin_match_photo_picker_keyboard(
                 )
             ]
         )
-    if team_index is None:
-        back_data = "adminpred:photopick"
-        back_label = msg.ADMIN_MATCH_TABLE_BTN_TEAMS
+    if available:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    msg.ADMIN_MATCH_TABLE_BTN_ARCHIVE,
+                    callback_data="adminpred:photoarchive",
+                )
+            ]
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    msg.ADMIN_PREDICTIONS_BTN_BACK,
+                    callback_data="adminpred:menu",
+                )
+            ]
+        )
+    elif team_index is None:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    msg.ADMIN_MATCH_TABLE_BTN_AVAILABLE,
+                    callback_data="adminpred:photopick",
+                )
+            ]
+        )
     else:
-        back_data = f"adminpred:phototeam:{team_index}"
-        back_label = msg.ADMIN_MATCH_TABLE_BTN_MONTHS
-    rows.append([InlineKeyboardButton(back_label, callback_data=back_data)])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    msg.ADMIN_MATCH_TABLE_BTN_MONTHS,
+                    callback_data=f"adminpred:phototeam:{team_index}",
+                )
+            ]
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    msg.ADMIN_MATCH_TABLE_BTN_TEAMS,
+                    callback_data="adminpred:photoarchive",
+                )
+            ]
+        )
     return InlineKeyboardMarkup(rows)
+
+
+async def _show_match_table_available(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    edit: bool = False,
+) -> None:
+    matches = _admin_available_matches()
+    if not matches:
+        text = msg.ADMIN_MATCH_TABLE_AVAILABLE_EMPTY
+        markup = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        msg.ADMIN_MATCH_TABLE_BTN_ARCHIVE,
+                        callback_data="adminpred:photoarchive",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        msg.ADMIN_PREDICTIONS_BTN_BACK,
+                        callback_data="adminpred:menu",
+                    )
+                ],
+            ]
+        )
+    else:
+        text = msg.ADMIN_MATCH_TABLE_PICK_AVAILABLE
+        markup = _admin_match_photo_picker_keyboard(matches, available=True)
+
+    if edit:
+        await edit_or_send_user(
+            update,
+            context,
+            text,
+            reply_markup=markup,
+            bot_username=BOT_USERNAME,
+        )
+    else:
+        await reply_to_user(
+            update,
+            context,
+            text,
+            reply_markup=markup,
+            bot_username=BOT_USERNAME,
+        )
 
 
 async def _show_match_table_team_picker(
@@ -2865,12 +3010,28 @@ async def _show_match_table_team_picker(
     *,
     edit: bool = False,
 ) -> None:
-    teams = reports.list_league_teams()
-    if not teams:
-        text = msg.ADMIN_MATCH_TABLE_EMPTY
-        markup = _admin_predictions_menu_keyboard()
+    """Archive entry: teams that still have previous (non-available) matches."""
+    archive_teams = _admin_archive_teams()
+    if not archive_teams:
+        text = msg.ADMIN_MATCH_TABLE_ARCHIVE_EMPTY
+        markup = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        msg.ADMIN_MATCH_TABLE_BTN_AVAILABLE,
+                        callback_data="adminpred:photopick",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        msg.ADMIN_PREDICTIONS_BTN_BACK,
+                        callback_data="adminpred:menu",
+                    )
+                ],
+            ]
+        )
     else:
-        text = msg.ADMIN_MATCH_TABLE_PICK_TEAM
+        text = msg.ADMIN_MATCH_TABLE_ARCHIVE_PICK_TEAM
         markup = _admin_match_photo_team_keyboard()
 
     if edit:
@@ -2897,7 +3058,7 @@ async def _show_match_table_month_picker(
     team_key: str,
     team_index: int,
 ) -> None:
-    matches = reports.matches_for_scope("team", team_key)
+    matches = _admin_archive_matches_for_team(team_key)
     if not matches:
         await edit_or_send_user(
             update,
@@ -2938,7 +3099,7 @@ async def _show_match_table_match_picker(
     team_index: int,
     year_month: str,
 ) -> None:
-    matches = reports.matches_for_scope("team", team_key)
+    matches = _admin_archive_matches_for_team(team_key)
     month_matches = _matches_for_month(matches, year_month)
     month_label = _format_year_month_label(year_month)
     if not month_matches:
@@ -3010,7 +3171,7 @@ async def match_table_command(
         return
 
     if not context.args:
-        await _show_match_table_team_picker(update, context)
+        await _show_match_table_available(update, context)
         return
 
     try:
@@ -3122,6 +3283,10 @@ async def admin_predictions_callback(
         return
 
     if action == "photopick":
+        await _show_match_table_available(update, context, edit=True)
+        return
+
+    if action == "photoarchive":
         await _show_match_table_team_picker(update, context, edit=True)
         return
 
