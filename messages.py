@@ -257,7 +257,7 @@ BTN_ADMIN_PREDICTIONS = "⚙️ لوحة المسؤول"
 ADMIN_PREDICTIONS_MENU = (
     "⚙️ لوحة المسؤول\n\n"
     "💾 Excel — اختر فريقاً: ملف واحد وورقة لكل مباراة\n"
-    "📋 جدول توقعات — عرض مباراة + إرسال Excel لها\n"
+    "📋 جدول توقعات — المباريات المتاحة الآن، والأرشيف للمباريات السابقة\n"
     "أو قائمة الأوامر:"
 )
 BTN_ADMIN_COMMANDS = "📖 أوامر المسؤول"
@@ -325,21 +325,33 @@ ADMIN_PREDICTIONS_EXPORT_DONE = (
 ADMIN_PREDICTIONS_FILE_CAPTION = "تقرير توقعات — {label}"
 
 BTN_ADMIN_MATCH_TABLE = "📋 جدول توقعات مباراة"
+ADMIN_MATCH_TABLE_PICK_AVAILABLE = (
+    "📋 جدول توقعات مباراة\n\n"
+    "المباريات المتاحة الآن — اختر مباراة:"
+)
+ADMIN_MATCH_TABLE_AVAILABLE_EMPTY = (
+    "📋 جدول توقعات مباراة\n\n"
+    "لا توجد مباريات متاحة في نافذة الـ 72 ساعة حالياً."
+)
+ADMIN_MATCH_TABLE_BTN_ARCHIVE = "🗂 أرشيف المباريات السابقة"
+ADMIN_MATCH_TABLE_BTN_AVAILABLE = "↩️ رجوع للمباريات المتاحة"
+ADMIN_MATCH_TABLE_ARCHIVE_PICK_TEAM = "🗂 أرشيف التوقعات\n\nاختر فريقاً:"
+ADMIN_MATCH_TABLE_ARCHIVE_EMPTY = "لا توجد مباريات سابقة في الأرشيف."
 ADMIN_MATCH_TABLE_PICK_STAGE = "📋 جدول توقعات مباراة\n\nاختر الفريق:"
 ADMIN_MATCH_TABLE_PICK_TEAM = "📋 جدول توقعات مباراة\n\nاختر الفريق:"
-ADMIN_MATCH_TABLE_PICK_MONTH = "📋 جدول توقعات مباراة — {team}\n\nاختر الشهر:"
+ADMIN_MATCH_TABLE_PICK_MONTH = "🗂 أرشيف — {team}\n\nاختر الشهر:"
 ADMIN_MATCH_TABLE_PICK_MATCH = "📋 {stage}\n\nاختر المباراة:"
-ADMIN_MATCH_TABLE_PICK_MATCH_MONTH = "📋 {team} · {month}\n\nاختر المباراة:"
+ADMIN_MATCH_TABLE_PICK_MATCH_MONTH = "🗂 أرشيف — {team} · {month}\n\nاختر المباراة:"
 ADMIN_MATCH_TABLE_USAGE = (
     "📋 جدول توقعات مباراة\n\n"
     "الاستخدام:\n"
-    "• /matchtable — اختيار الفريق ثم الشهر ثم المباراة\n"
+    "• /matchtable — المباريات المتاحة الآن (والأرشيف للمباريات السابقة)\n"
     "• /matchtable <رقم_المباراة> — عرض الجدول مباشرة"
 )
 ADMIN_MATCH_TABLE_EMPTY = "لا توجد مباريات في قاعدة البيانات."
-ADMIN_MATCH_TABLE_EMPTY_STAGE = "لا توجد مباريات لـ «{stage}»."
-ADMIN_MATCH_TABLE_EMPTY_MONTH = "لا توجد مباريات لـ {team} في {month}."
-ADMIN_MATCH_TABLE_BTN_TEAMS = "↩️ رجوع للفرق"
+ADMIN_MATCH_TABLE_EMPTY_STAGE = "لا توجد مباريات مؤرشفة لـ «{stage}»."
+ADMIN_MATCH_TABLE_EMPTY_MONTH = "لا توجد مباريات مؤرشفة لـ {team} في {month}."
+ADMIN_MATCH_TABLE_BTN_TEAMS = "↩️ رجوع لأرشيف الفرق"
 ADMIN_MATCH_TABLE_BTN_MONTHS = "↩️ رجوع للأشهر"
 
 SETGROUPPOINTS_USAGE = (
