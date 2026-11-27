@@ -19,20 +19,25 @@ def _fresh():
 
 
 def test_rm_barca_gated_by_72h_like_other_clubs():
+    """Far UCL is blocked when a nearer domestic fixture is still next."""
     db = _fresh()
-    villa = db.add_match(
-        "برشلونة",
-        "أستون فيلا",
-        "2026-11-03T20:00:00 · الجولة 4 · دوري أبطال أوروبا",
-    )
-    aek = db.add_match(
-        "أيك أثينا",
-        "ريال مدريد",
-        "2026-11-04T17:45:00 · الجولة 4 · دوري أبطال أوروبا",
-    )
+    db.seed_league_season_matches()
     now = datetime(2026, 10, 31, 6, 0, 0)
+    villa = next(
+        m
+        for m in db.list_matches(open_only=False, limit=None)
+        if m.home_team == "برشلونة" and m.away_team == "أستون فيلا"
+    )
+    aek = next(
+        m
+        for m in db.list_matches(open_only=False, limit=None)
+        if m.home_team == "أيك أثينا" and m.away_team == "ريال مدريد"
+    )
     assert not db.match_in_prediction_window(villa, now=now)
     assert not db.match_in_prediction_window(aek, now=now)
+    # Domestic MD11 is next for each club — UCL is not gap-fill.
+    assert not db.match_is_next_for_tracked_club(villa, now=now)
+    assert not db.match_is_next_for_tracked_club(aek, now=now)
     assert not db.match_accepts_predictions(villa, now=now)
     assert not db.match_accepts_predictions(aek, now=now)
 
@@ -46,8 +51,8 @@ def test_picker_lists_md11_rm_barca_inside_72h():
     pairs = {(m.home_team, m.away_team) for m in matches}
     assert ("برشلونة", "ألافيس") in pairs
     assert ("راسينغ سانتاندر", "ريال مدريد") in pairs
-    # Far UCL fixtures stay hidden until inside 72h.
+    # Far UCL fixtures stay hidden until inside 72h (and are not next).
     assert ("برشلونة", "أستون فيلا") not in pairs
     assert ("أيك أثينا", "ريال مدريد") not in pairs
     for match in matches:
-        assert db.match_in_prediction_window(match, now=now)
+        assert db.match_accepts_predictions(match, now=now)

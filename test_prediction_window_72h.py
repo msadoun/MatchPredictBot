@@ -48,7 +48,11 @@ def test_league_picker_only_lists_matches_in_72h_window():
     # Leeds is weeks away — must not appear yet.
     assert ("أرسنال", "ليدز يونايتد") not in pairs
     for match in matches:
-        assert db.match_in_prediction_window(match, now=now)
+        assert db.match_accepts_predictions(match, now=now)
+        # In-window OR gap-fill (each club's next fixture).
+        assert db.match_in_prediction_window(
+            match, now=now
+        ) or db.match_is_next_for_tracked_club(match, now=now)
 
 
 def test_stale_arsenal_psv_never_shown_even_in_window():

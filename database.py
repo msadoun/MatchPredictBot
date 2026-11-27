@@ -980,6 +980,55 @@ def match_in_prediction_window(match: Match, *, now: datetime | None = None) -> 
     return kickoff <= check + timedelta(hours=PREDICTION_WINDOW_HOURS)
 
 
+def next_upcoming_league_match_for_club(
+    club: str,
+    *,
+    now: datetime | None = None,
+) -> Match | None:
+    """Soonest future calendar match for a tracked club (no result yet)."""
+    from league_season import LEAGUE_SEASON_FIXTURES
+    from worldcup2026 import safe_kickoff_datetime
+
+    allowed = {(f.home, f.away) for f in LEAGUE_SEASON_FIXTURES}
+    check = now or datetime.utcnow()
+    candidates: list[tuple[datetime, Match]] = []
+    for match in list_matches(open_only=False, limit=None):
+        if club not in (match.home_team, match.away_team):
+            continue
+        if (match.home_team, match.away_team) not in allowed:
+            continue
+        if match.home_score is not None and match.away_score is not None:
+            continue
+        # Respect admin /closematch lock.
+        if match.predictions_override and not match.is_open:
+            continue
+        kickoff = safe_kickoff_datetime(match.kickoff_at)
+        if kickoff is None or kickoff <= check:
+            continue
+        candidates.append((kickoff, match))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1].id))
+    return candidates[0][1]
+
+
+def match_is_next_for_tracked_club(
+    match: Match,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """True when this fixture is the next upcoming match for RM/Barça/PL club."""
+    from league_season import LEAGUE_TEAMS
+
+    for club in LEAGUE_TEAMS:
+        if club not in (match.home_team, match.away_team):
+            continue
+        nxt = next_upcoming_league_match_for_club(club, now=now)
+        if nxt is not None and nxt.id == match.id:
+            return True
+    return False
+
+
 def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> bool:
     # Admin /openmatch or /closematch locks is_open; respect that choice.
     if match.predictions_override:
@@ -988,10 +1037,13 @@ def match_accepts_predictions(match: Match, *, now: datetime | None = None) -> b
         return False
     if match_has_started(match, now=now):
         return False
+    # 72h window, OR each tracked club's next fixture (gap-fill so a club
+    # never disappears when the calendar has a hole between matchweeks).
     if not match_in_prediction_window(match, now=now):
-        return False
+        if not match_is_next_for_tracked_club(match, now=now):
+            return False
     # `is_open` is synced to wall-clock kickoff. When `now` is injected (tests /
-    # simulation), trust kickoff + 72h window only.
+    # simulation), trust kickoff + window / gap-fill rules above.
     if now is None and not match.is_open:
         return False
     return True
@@ -1068,10 +1120,13 @@ def list_next_open_match_per_league_club(
     *,
     now: datetime | None = None,
 ) -> list[Match]:
-    """League/UCL matches open for prediction in the next 72 hours.
+    """League/UCL matches open for prediction.
 
-    Shows every calendar fixture whose kickoff is still upcoming and within
-    PREDICTION_WINDOW_HOURS (including Real Madrid and Barcelona).
+    Includes:
+    - every calendar fixture inside the 72h window, and
+    - each tracked club's next upcoming fixture (gap-fill), so a club never
+      vanishes when domestic fixtures were not seeded far enough ahead.
+
     Head-to-heads between tracked clubs appear once.
     """
     from league_season import LEAGUE_SEASON_FIXTURES, LEAGUE_TEAMS
@@ -1089,15 +1144,24 @@ def list_next_open_match_per_league_club(
         and (m.home_team in league_teams or m.away_team in league_teams)
         and match_accepts_predictions(m, now=check)
     ]
+    # Explicit gap-fill: guarantee every club with a future fixture is represented.
+    seen_ids = {m.id for m in open_matches}
+    for club in LEAGUE_TEAMS:
+        if any(club in (m.home_team, m.away_team) for m in open_matches):
+            continue
+        nxt = next_upcoming_league_match_for_club(club, now=check)
+        if nxt is not None and nxt.id not in seen_ids:
+            open_matches.append(nxt)
+            seen_ids.add(nxt.id)
     open_matches.sort(key=lambda m: (m.kickoff_at or "", m.id))
 
     # Drop duplicate head-to-head rows (same pair / same kickoff).
-    seen_ids: set[int] = set()
     ordered: list[Match] = []
+    ordered_ids: set[int] = set()
     for match in open_matches:
-        if match.id in seen_ids:
+        if match.id in ordered_ids:
             continue
-        seen_ids.add(match.id)
+        ordered_ids.add(match.id)
         ordered.append(match)
     return ordered
 

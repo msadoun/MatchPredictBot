@@ -34,4 +34,4 @@ def test_picker_lists_all_clubs_on_fri_nov_6():
     assert ("أتلتيكو مدريد", "برشلونة") in pairs
 
     for match in matches:
-        assert db.match_in_prediction_window(match, now=now)
+        assert db.match_accepts_predictions(match, now=now)
